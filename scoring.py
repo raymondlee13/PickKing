@@ -3,6 +3,8 @@ Pure data transforms -- no network calls (see propline_api.py for those)."""
 
 from collections import defaultdict
 
+from goblin_demon_calibration import estimate_multiplier
+
 DFS_BOOKS = {"prizepicks", "underdog", "sleeper", "dabble"}
 CONSENSUS_BOOKS = {"draftkings", "fanduel", "betmgm", "caesars", "betrivers",
                     "pinnacle", "bovada", "unibet"}
@@ -14,6 +16,12 @@ POWER_PLAY_BARS = {2: 57.7, 3: 55.0, 4: 56.0, 5: 55.0, 6: 55.0}
 FLEX_BARS = {3: 57.7, 4: 55.0, 5: 54.3, 6: 54.2}
 TIER_A_MARGIN = 4.0
 TIER_B_MARGIN = 1.5
+# The standard leg's own fair multiplier for a 2-pick Power entry, derived
+# from POWER_PLAY_BARS[2] -- every goblin/demon calibration example so far
+# was captured as a real 2-pick entry (one standard leg + one alt leg), so
+# this is what estimate_multiplier divides that observed total by to isolate
+# the alt leg's own contribution. See goblin_demon_calibration.py.
+STANDARD_2PICK_LEG_MULTIPLIER = 100.0 / POWER_PLAY_BARS[2]
 # Safety default flipped after the WNBA assists bug: markets require an EXACT
 # line match unless explicitly whitelisted below as safe to estimate within
 # a small gap. Unconfirmed/new sports (like MLB) inherit this safe default
@@ -96,6 +104,7 @@ def extract_pp_lines(event, board="prizepicks"):
                     "point": over.get("point"),
                     "dfs_odds_type": over.get("dfs_odds_type") or "standard",
                     "last_change_at": over.get("last_change_at") or "",
+                    "line_gap": over.get("line_gap"),
                 })
 
     # De-duplicate: PropLine can retain more than one entry for the same
@@ -211,7 +220,27 @@ def build_report(event, bar, board="prizepicks"):
         single_book = len(probs) < 2
         any_estimate = any(not c["is_exact_match"] for c in consensus)
         max_gap = max((c["gap"] for c in consensus), default=0.0)
-        margin, tier = grade_leg(bar, true_pct)
+
+        # Goblins pay less than a standard line (safer, lower multiplier) and
+        # demons pay more (riskier, higher multiplier) -- grading either one
+        # against the flat standard-entry bar makes goblins look inflated and
+        # demons look suppressed. Where we have a calibrated multiplier for
+        # this market (see goblin_demon_calibration.py), grade the leg against
+        # its own implied break-even instead of the flat bar. Markets without
+        # calibration data yet keep the old flat-bar behavior.
+        leg_bar = bar
+        deviation = None
+        assumed_multiplier = None
+        if is_demon_or_goblin_leg and leg.get("line_gap") is not None:
+            deviation = abs(leg["line_gap"])
+            if leg["dfs_odds_type"] == "goblin":
+                deviation = -deviation
+            assumed_multiplier = estimate_multiplier(
+                leg["market"], leg["dfs_odds_type"], deviation, STANDARD_2PICK_LEG_MULTIPLIER)
+            if assumed_multiplier:
+                leg_bar = 100.0 / assumed_multiplier
+
+        margin, tier = grade_leg(leg_bar, true_pct)
 
         # Estimate-type taxonomy for spreadsheet logging (see PrizePicks_Model_Tracking.xlsx
         # Legend). NOTE: we do NOT do push modeling -- whole-number lines are tagged by
@@ -239,8 +268,9 @@ def build_report(event, bar, board="prizepicks"):
             "side": side,
             "consensus_pct": round(true_pct, 1),
             "spread_pct": round(spread_pct, 1) if spread_pct is not None else None,
-            "single_book": single_book, "bar": bar, "margin": round(margin, 1),
+            "single_book": single_book, "bar": round(leg_bar, 1), "margin": round(margin, 1),
             "tier": tier, "estimated": any_estimate, "gap": round(max_gap, 1),
+            "deviation": deviation, "assumed_multiplier": round(assumed_multiplier, 2) if assumed_multiplier else None,
             "estimate_type": estimate_type, "whole_number": whole_number,
             "book_point": rep["book_point"], "over_price": rep["over_price"], "under_price": rep["under_price"],
         })

@@ -120,6 +120,9 @@ button:hover { background: var(--accent-hover); }
 .below { border-left: 3px solid var(--border-strong); opacity: 0.55; }
 .badge { display: inline-block; font-size: 0.65rem; font-weight: 600; letter-spacing: 0.02em; padding: 0.15rem 0.45rem; border-radius: 4px; margin-left: 0.35rem; }
 .badge-est { background: var(--warning-bg); color: var(--warning); }
+.badge-calib { background: var(--bg-elev-3); color: var(--accent); }
+.badge-calib .badge-fix { color: var(--text-muted); text-decoration: underline; margin-left: 0.25rem; }
+.badge-calib .badge-fix:hover { color: var(--text); }
 .badge-single { background: var(--bg-elev-3); color: var(--text-secondary); }
 .badge-conflict { background: var(--danger-bg); color: var(--danger); }
 .badge-side-more { background: var(--success-bg); color: var(--success); }

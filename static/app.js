@@ -111,15 +111,62 @@ function deleteGame(key) {
     renderEntryBuilder();
 }
 
-function badgesForRow(r) {
+function badgesForRow(r, rowIdx) {
     var b = '';
     if (r.estimated) b += '<span class="badge badge-est">EST +' + r.gap + 'pt</span>';
+    if (r.deviation !== null && r.deviation !== undefined) {
+        var label = r.assumed_multiplier ? ('~' + r.assumed_multiplier + 'x ASSUMED') : 'MULTIPLIER UNKNOWN';
+        b += '<span class="badge badge-calib">' + label
+            + ' <a href="javascript:void(0)" class="badge-fix" onclick="event.stopPropagation(); event.preventDefault(); correctMultiplier(' + rowIdx + ')">fix</a></span>';
+    }
     if (r.single_book) b += '<span class="badge badge-single">SINGLE BOOK</span>';
     if (r.type_conflict) b += '<span class="badge badge-conflict">VERIFY TYPE IN APP</span>';
     return b;
 }
 
-function legRowHtml(r, gameKey, gameLabel) {
+function correctMultiplier(rowIdx) {
+    if (!currentGameData) return;
+    var r = currentGameData.rows[rowIdx];
+    if (!r || r.deviation === null || r.deviation === undefined) return;
+
+    var input = prompt(
+        'Real total multiplier for a 2-pick entry made of this leg + one standard leg\n'
+        + '(same as reading it straight off the PrizePicks picker):',
+        r.assumed_multiplier || ''
+    );
+    if (input === null) return;
+    var mult = parseFloat(input);
+    if (!mult || mult <= 1.0) {
+        alert('Enter a valid multiplier greater than 1, e.g. 2.4');
+        return;
+    }
+
+    fetch('/calibrate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            market: r.market, dfs_type: r.dfs_type, deviation: r.deviation,
+            multiplier: mult, consensus_pct: r.consensus_pct
+        })
+    })
+    .then(function(resp) { return resp.json(); })
+    .then(function(data) {
+        if (!data.success) {
+            alert(data.message || 'Could not save calibration.');
+            return;
+        }
+        r.assumed_multiplier = data.assumed_multiplier;
+        if (data.bar !== undefined) r.bar = data.bar;
+        if (data.margin !== undefined) r.margin = data.margin;
+        if (data.tier !== undefined) r.tier = data.tier;
+        renderFilteredColumns();
+    })
+    .catch(function(err) {
+        alert('Request failed: ' + err);
+    });
+}
+
+function legRowHtml(r, gameKey, gameLabel, rowIdx) {
     var css = r.tier === 'TIER A' ? 'tierA' : (r.tier === 'TIER B' ? 'tierB' : 'below');
     var spread = r.single_book ? 'N/A - SINGLE BOOK' : (r.spread_pct + 'pts');
     var shortMarket = r.market.replace('player_', '').replace('batter_', '').replace('pitcher_', '');
@@ -146,7 +193,7 @@ function legRowHtml(r, gameKey, gameLabel) {
         + '<input type="checkbox" class="leg-check" data-legid="' + legId + '" data-label="' + label
         + '" data-consensus="' + r.consensus_pct + '" data-gamelabel="' + gameLabel + '" data-logb64="' + logDataB64 + '" '
         + checkedAttr + ' onchange="toggleLeg(this)">'
-        + '<strong>' + r.player + '</strong> — ' + shortMarket + sideBadge + badgesForRow(r)
+        + '<strong>' + r.player + '</strong> — ' + shortMarket + sideBadge + badgesForRow(r, rowIdx)
         + matchupLine
         + '<div class="meta">'
         + 'Line: ' + r.point + ' | Consensus: ' + r.consensus_pct + '% ' + r.side
@@ -261,7 +308,7 @@ function renderFilteredColumns() {
 
     function colHtml(list, emptyMsg) {
         if (list.length === 0) return '<div class="empty-col">' + emptyMsg + '</div>';
-        return list.map(function(r) { return legRowHtml(r, gameKey, gameLabel); }).join('');
+        return list.map(function(r) { return legRowHtml(r, gameKey, gameLabel, allRows.indexOf(r)); }).join('');
     }
 
     var metaText = rows.length === allRows.length

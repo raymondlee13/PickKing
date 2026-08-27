@@ -11,10 +11,11 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from config import load_config
 from excel_logging import log_parlay_to_excel
+from goblin_demon_calibration import estimate_multiplier, record_correction
 from propline_api import find_event, fetch_props, list_upcoming_events, scan_slate
 from scoring import (
     BASKETBALL_MARKETS, FLEX_BARS, MARKETS_BY_SPORT, POWER_PLAY_BARS,
-    build_report, extract_raw_prizepicks,
+    STANDARD_2PICK_LEG_MULTIPLIER, build_report, extract_raw_prizepicks, grade_leg,
 )
 from views import render_form, rows_to_payload
 
@@ -82,8 +83,46 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_scan_slate()
         elif self.path == "/log_parlay":
             self.handle_log_parlay()
+        elif self.path == "/calibrate":
+            self.handle_calibrate()
         else:
             self._send_html("<h1>Not found</h1>", 404)
+
+    def handle_calibrate(self):
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length).decode("utf-8")
+        try:
+            data = json.loads(body)
+        except Exception:
+            self._send_json({"success": False, "message": "Malformed request."})
+            return
+
+        market = data.get("market")
+        dfs_type = data.get("dfs_type")
+        deviation = data.get("deviation")
+        consensus_pct = data.get("consensus_pct")
+
+        if dfs_type not in ("goblin", "demon") or not market or deviation is None:
+            self._send_json({"success": False, "message": "Missing market/dfs_type/deviation."})
+            return
+        try:
+            multiplier = float(data.get("multiplier"))
+            if multiplier <= 1.0:
+                raise ValueError()
+        except (TypeError, ValueError):
+            self._send_json({"success": False, "message": "Enter a valid real 2-pick total multiplier (e.g. 2.4)."})
+            return
+
+        record_correction(market, dfs_type, float(deviation), multiplier)
+
+        assumed_multiplier = estimate_multiplier(market, dfs_type, float(deviation), STANDARD_2PICK_LEG_MULTIPLIER)
+        result = {"success": True, "message": "Calibration saved.",
+                  "assumed_multiplier": round(assumed_multiplier, 2) if assumed_multiplier else None}
+        if consensus_pct is not None and assumed_multiplier:
+            bar = 100.0 / assumed_multiplier
+            margin, tier = grade_leg(bar, float(consensus_pct))
+            result.update({"bar": round(bar, 1), "margin": round(margin, 1), "tier": tier})
+        self._send_json(result)
 
     def handle_log_parlay(self):
         length = int(self.headers.get("Content-Length", 0))
