@@ -113,7 +113,11 @@ function deleteGame(key) {
 
 function badgesForRow(r, rowIdx) {
     var b = '';
-    if (r.estimated) b += '<span class="badge badge-est">EST +' + r.gap + 'pt</span>';
+    if (r.estimate_type === 'THRESHOLD_LADDER') {
+        b += '<span class="badge badge-est">LADDER EST -- single-book, no de-vig</span>';
+    } else if (r.estimated) {
+        b += '<span class="badge badge-est">EST +' + r.gap + 'pt</span>';
+    }
     if (r.deviation !== null && r.deviation !== undefined) {
         var label = r.assumed_multiplier ? ('~' + r.assumed_multiplier + 'x ASSUMED') : 'MULTIPLIER UNKNOWN';
         b += '<span class="badge badge-calib">' + label

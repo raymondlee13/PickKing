@@ -1,6 +1,8 @@
 """Edge-grading logic: consensus de-vigging, tiering, and report building.
 Pure data transforms -- no network calls (see propline_api.py for those)."""
 
+import math
+import re
 import statistics
 from collections import defaultdict
 
@@ -215,6 +217,80 @@ def find_consensus_reference_point(event, player, market_key):
     return statistics.median(points)
 
 
+_THRESHOLD_RE = re.compile(r"(\d+(?:\.\d+)?)\+")
+
+
+def extract_threshold_ladder(event, player, market_key):
+    """Single-sided cumulative 'X+' threshold markets some books publish
+    (e.g. "15+ Points", "To Record 10+ Rebounds", "3+ Assists") -- a real,
+    book-priced survival curve that often reaches much deeper into the tail
+    than a book's own standard Over/Under line does, which is exactly the
+    territory a deep demon/goblin line lives in.
+
+    Unlike extract_consensus, these have no listed Under counterpart to
+    devig against -- the price is used as-is via american_to_prob, so it
+    still carries whatever single-sided vig the book baked in. Treat any
+    probability derived from this as meaningfully less reliable than a
+    proper two-way devigged number; it's a fallback for when nothing better
+    exists, not a replacement for extract_consensus.
+
+    Returns a sorted list of (threshold, probability) tuples, averaging
+    across books when more than one publishes the exact same threshold.
+    """
+    by_threshold = defaultdict(list)
+    for book in event.get("bookmakers", []):
+        if book["key"] not in CONSENSUS_BOOKS:
+            continue
+        for market in book.get("markets", []):
+            if market["key"] != market_key:
+                continue
+            for outcome in market.get("outcomes", []):
+                if outcome.get("description") != player or outcome.get("point") is not None:
+                    continue
+                match = _THRESHOLD_RE.search(outcome.get("name") or "")
+                if not match:
+                    continue
+                prob = american_to_prob(outcome.get("price"))
+                if prob is not None:
+                    by_threshold[float(match.group(1))].append(prob)
+
+    ladder = [(t, sum(ps) / len(ps)) for t, ps in by_threshold.items()]
+    ladder.sort(key=lambda p: p[0])
+    return ladder
+
+
+def estimate_probability_from_ladder(ladder, target_point):
+    """Log-linear interpolate/extrapolate a threshold ladder (see
+    extract_threshold_ladder) to estimate the probability of clearing an
+    Over-style point -- e.g. Over 39.5 needs the stat to reach 40, so this
+    looks up (or blends between) the ladder's nearest "40+"-style entries.
+    Returns None if the ladder is empty or target_point is unknown.
+    """
+    if not ladder or target_point is None:
+        return None
+    needed = target_point + 0.5
+
+    if len(ladder) == 1:
+        return ladder[0][1]
+
+    if needed <= ladder[0][0]:
+        (t0, p0), (t1, p1) = ladder[0], ladder[1]
+    elif needed >= ladder[-1][0]:
+        (t0, p0), (t1, p1) = ladder[-2], ladder[-1]
+    else:
+        t0, p0 = ladder[0]
+        for t1, p1 in ladder[1:]:
+            if needed <= t1:
+                break
+            t0, p0 = t1, p1
+
+    if t1 == t0 or p0 <= 0 or p1 <= 0:
+        return p0
+    frac = (needed - t0) / (t1 - t0)
+    log_p = math.log(p0) + frac * (math.log(p1) - math.log(p0))
+    return min(max(math.exp(log_p), 0.0001), 0.9999)
+
+
 def grade_leg(bar, true_prob_pct):
     margin = true_prob_pct - bar
     if margin < TIER_B_MARGIN:
@@ -226,10 +302,49 @@ def grade_leg(bar, true_prob_pct):
     return margin, tier
 
 
-def calibrated_bar_for_leg(event, leg, bar):
+def find_ladder_reference_point(ladder):
+    """Where a threshold ladder's own probability curve crosses 50% -- a
+    last-resort reference line (see calibrated_bar_for_leg) for when no book
+    has a real Over/Under point for this player/market, only the
+    single-sided threshold ladder itself (see extract_threshold_ladder).
+    This is one layer of estimation further removed from real market data
+    than find_consensus_reference_point (which uses an actual
+    book-published line), so treat any deviation computed from it with a
+    bit more skepticism than usual. Returns None if the ladder is empty.
+    """
+    if not ladder:
+        return None
+    if len(ladder) == 1:
+        return ladder[0][0]
+
+    # Probability decreases as threshold increases. Find the two adjacent
+    # rungs that straddle 50%, extrapolating off the two closest rungs if
+    # the whole ladder happens to sit on one side of it.
+    if ladder[0][1] <= 0.5:
+        (t0, p0), (t1, p1) = ladder[0], ladder[1]
+    elif ladder[-1][1] >= 0.5:
+        (t0, p0), (t1, p1) = ladder[-2], ladder[-1]
+    else:
+        t0, p0 = ladder[0]
+        for t1, p1 in ladder[1:]:
+            if p1 <= 0.5:
+                break
+            t0, p0 = t1, p1
+
+    if p0 <= 0 or p1 <= 0 or p0 == p1:
+        return t0
+    frac = (math.log(0.5) - math.log(p0)) / (math.log(p1) - math.log(p0))
+    return t0 + frac * (t1 - t0)
+
+
+def calibrated_bar_for_leg(event, leg, bar, ladder=None):
     """(leg_bar, deviation, assumed_multiplier) for a goblin/demon leg --
     factored out so both a normally-gradeable leg and one with no consensus
-    probability data (see build_report) get the same calibration treatment."""
+    probability data (see build_report) get the same calibration treatment.
+    ladder, if given, is a pre-fetched threshold ladder (see
+    extract_threshold_ladder) used as a last-resort reference-point source
+    when neither line_gap nor a real consensus Over/Under line is available.
+    """
     if leg.get("line_gap") is not None:
         deviation = abs(leg["line_gap"])
         if leg["dfs_odds_type"] == "goblin":
@@ -239,6 +354,8 @@ def calibrated_bar_for_leg(event, leg, bar):
         # consensus books' own line as the reference instead of leaving it
         # ungraded-for-type. See find_consensus_reference_point.
         reference_point = find_consensus_reference_point(event, leg["player"], leg["market"])
+        if reference_point is None and ladder:
+            reference_point = find_ladder_reference_point(ladder)
         deviation = (leg["point"] - reference_point
                      if reference_point is not None and leg["point"] is not None else None)
 
@@ -260,16 +377,28 @@ def build_report(event, bar, board="prizepicks"):
         consensus = extract_consensus(event, leg["player"], leg["market"], leg["point"])
         probs = [c["novig_over_prob"] for c in consensus if c["novig_over_prob"] is not None]
 
-        if not probs:
+        # from_ladder stays None unless we fall back to the single-sided
+        # threshold-ladder estimate below -- used to flag the resulting row
+        # as meaningfully less certain than a real two-way devigged number.
+        # ladder itself (not just from_ladder) is also reused below as a
+        # last-resort reference-point source for the calibrated bar.
+        ladder = None
+        from_ladder = None
+        if not probs and is_demon_or_goblin_leg:
+            ladder = extract_threshold_ladder(event, leg["player"], leg["market"])
+            from_ladder = estimate_probability_from_ladder(ladder, leg["point"])
+
+        if not probs and from_ladder is None:
             if not is_demon_or_goblin_leg:
                 continue  # no probability data and nothing else useful to show
 
-            # No consensus book has a safe match at this leg's own point, so
-            # there's no true hit probability to compute -- don't fabricate
-            # one. Still show the leg with whatever calibrated multiplier we
-            # can find (line_gap or the consensus books' own reference line)
-            # instead of letting it silently vanish from the results.
-            leg_bar, deviation, assumed_multiplier = calibrated_bar_for_leg(event, leg, bar)
+            # No consensus book has a safe match at this leg's own point, and
+            # no threshold ladder covers it either -- there's no true hit
+            # probability to compute, so don't fabricate one. Still show the
+            # leg with whatever calibrated multiplier we can find (line_gap
+            # or the consensus books' own reference line) instead of letting
+            # it silently vanish from the results.
+            leg_bar, deviation, assumed_multiplier = calibrated_bar_for_leg(event, leg, bar, ladder)
             rows.append({
                 "player": leg["player"], "market": leg["market"], "point": leg["point"],
                 "dfs_type": leg["dfs_odds_type"], "books": [],
@@ -285,8 +414,23 @@ def build_report(event, bar, board="prizepicks"):
             })
             continue
 
-        over_pct = (sum(probs) / len(probs)) * 100
-        under_pct = 100.0 - over_pct
+        if from_ladder is not None:
+            over_pct = from_ladder * 100
+            under_pct = 100.0 - over_pct
+            spread_pct = None
+            single_book = False
+            any_estimate = True
+            max_gap = 0.0
+            books_used = ["threshold ladder (pooled)"]
+        else:
+            over_pct = (sum(probs) / len(probs)) * 100
+            under_pct = 100.0 - over_pct
+            spread_pct = (max(probs) - min(probs)) * 100 if len(probs) > 1 else None
+            single_book = len(probs) < 2
+            any_estimate = any(not c["is_exact_match"] for c in consensus)
+            max_gap = max((c["gap"] for c in consensus), default=0.0)
+            books_used = [c["book"] for c in consensus]
+
         # Demon and Goblin lines can ONLY be picked as More/Over on PrizePicks --
         # there's no Less option for them. So unlike standard lines (where we grade
         # whichever side actually clears the bar), Demon/Goblin legs are always
@@ -299,10 +443,6 @@ def build_report(event, bar, board="prizepicks"):
             side, true_pct = "More", over_pct
         else:
             side, true_pct = "Less", under_pct
-        spread_pct = (max(probs) - min(probs)) * 100 if len(probs) > 1 else None
-        single_book = len(probs) < 2
-        any_estimate = any(not c["is_exact_match"] for c in consensus)
-        max_gap = max((c["gap"] for c in consensus), default=0.0)
 
         # Goblins pay less than a standard line (safer, lower multiplier) and
         # demons pay more (riskier, higher multiplier) -- grading either one
@@ -312,7 +452,7 @@ def build_report(event, bar, board="prizepicks"):
         # its own implied break-even instead of the flat bar. Markets without
         # calibration data yet keep the old flat-bar behavior.
         leg_bar, deviation, assumed_multiplier = (
-            calibrated_bar_for_leg(event, leg, bar) if is_demon_or_goblin_leg else (bar, None, None))
+            calibrated_bar_for_leg(event, leg, bar, ladder) if is_demon_or_goblin_leg else (bar, None, None))
 
         margin, tier = grade_leg(leg_bar, true_pct)
 
@@ -321,7 +461,9 @@ def build_report(event, bar, board="prizepicks"):
         # their actual matching method (exact/estimated), not auto-labeled PUSH_FITTED,
         # since claiming a push model we haven't built would misrepresent the methodology.
         # (NO_BOOK is used for the no-consensus-data branch above, not reachable here.)
-        if is_demon_or_goblin_leg and any_estimate:
+        if from_ladder is not None:
+            estimate_type = "THRESHOLD_LADDER"
+        elif is_demon_or_goblin_leg and any_estimate:
             estimate_type = "GOBLIN_FIT"
         elif any_estimate:
             estimate_type = "ALT_ESTIMATED"
@@ -330,13 +472,19 @@ def build_report(event, bar, board="prizepicks"):
         whole_number = leg["point"] is not None and float(leg["point"]) % 1 == 0
 
         # Representative book price/point for logging -- prefer an exact match if
-        # one exists among the books used, else just take the first.
-        exact_matches = [c for c in consensus if c["is_exact_match"]]
-        rep = exact_matches[0] if exact_matches else consensus[0]
+        # one exists among the books used, else just take the first. Not
+        # meaningful for a pooled threshold-ladder estimate (no single
+        # matching book/price), so left blank there.
+        if from_ladder is not None:
+            book_point, over_price, under_price = None, None, None
+        else:
+            exact_matches = [c for c in consensus if c["is_exact_match"]]
+            rep = exact_matches[0] if exact_matches else consensus[0]
+            book_point, over_price, under_price = rep["book_point"], rep["over_price"], rep["under_price"]
 
         rows.append({
             "player": leg["player"], "market": leg["market"], "point": leg["point"],
-            "dfs_type": leg["dfs_odds_type"], "books": [c["book"] for c in consensus],
+            "dfs_type": leg["dfs_odds_type"], "books": books_used,
             "type_conflict": leg.get("type_conflict", False),
             "side": side,
             "consensus_pct": round(true_pct, 1),
@@ -345,7 +493,7 @@ def build_report(event, bar, board="prizepicks"):
             "tier": tier, "estimated": any_estimate, "gap": round(max_gap, 1),
             "deviation": deviation, "assumed_multiplier": round(assumed_multiplier, 2) if assumed_multiplier else None,
             "estimate_type": estimate_type, "whole_number": whole_number,
-            "book_point": rep["book_point"], "over_price": rep["over_price"], "under_price": rep["under_price"],
+            "book_point": book_point, "over_price": over_price, "under_price": under_price,
         })
     rows.sort(key=lambda r: r["margin"] if r["margin"] is not None else float("-inf"), reverse=True)
     return rows, bar

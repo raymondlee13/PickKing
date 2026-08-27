@@ -104,5 +104,5 @@ def scan_slate(sport_key, date_str, api_key, bar):
         combined_rows.extend(rows)
         scanned_games.append(matchup)
 
-    combined_rows.sort(key=lambda r: r["margin"], reverse=True)
+    combined_rows.sort(key=lambda r: r["margin"] if r["margin"] is not None else float("-inf"), reverse=True)
     return combined_rows, combined_raw, scanned_games, skipped_games
