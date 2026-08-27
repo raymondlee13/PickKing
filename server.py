@@ -15,7 +15,7 @@ from goblin_demon_calibration import estimate_multiplier, record_correction
 from propline_api import find_event, fetch_props, list_upcoming_events, scan_slate
 from scoring import (
     BASKETBALL_MARKETS, FLEX_BARS, MARKETS_BY_SPORT, POWER_PLAY_BARS,
-    STANDARD_2PICK_LEG_MULTIPLIER, build_report, extract_raw_prizepicks, grade_leg,
+    STANDARD_2PICK_LEG_MULTIPLIER, build_report, extract_raw_all_books, grade_leg,
 )
 from views import render_form, rows_to_payload
 
@@ -196,7 +196,7 @@ class Handler(BaseHTTPRequestHandler):
 
             markets = MARKETS_BY_SPORT.get(sport, BASKETBALL_MARKETS)
             full_event = fetch_props(sport, event["id"], api_key, markets)
-            raw_prizepicks = extract_raw_prizepicks(full_event)
+            raw_books = extract_raw_all_books(full_event)
 
             bar_table = POWER_PLAY_BARS if entry_type == "power" else FLEX_BARS
             bar = bar_table.get(int(entry), 55.0)
@@ -207,7 +207,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_html(render_form(team_a, team_b, entry, sport, entry_type, error_html))
                 return
 
-            payload = rows_to_payload(rows, bar, team_a, team_b, sport, entry, entry_type, raw_prizepicks)
+            payload = rows_to_payload(rows, bar, team_a, team_b, sport, entry, entry_type, raw_books)
             self._send_html(render_form(team_a, team_b, entry, sport, entry_type, scan_payload=payload))
 
         except urllib.error.HTTPError as e:
@@ -274,7 +274,7 @@ class Handler(BaseHTTPRequestHandler):
                 "label": label,
                 "bar": bar,
                 "rows": rows,
-                "rawPrizePicks": raw,
+                "rawBooks": raw,
                 "scannedGames": scanned_games,
             }
             if skipped_games:

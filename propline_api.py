@@ -5,7 +5,7 @@ import json
 import urllib.parse
 import urllib.request
 
-from scoring import MARKETS_BY_SPORT, BASKETBALL_MARKETS, extract_raw_prizepicks, build_report
+from scoring import MARKETS_BY_SPORT, BASKETBALL_MARKETS, extract_raw_all_books, build_report
 
 
 def api_get(path, api_key, extra_params=None):
@@ -92,7 +92,7 @@ def scan_slate(sport_key, date_str, api_key, bar):
             skipped_games.append(f"{matchup} ({type(e).__name__})")
             continue
 
-        raw = extract_raw_prizepicks(full_event)
+        raw = extract_raw_all_books(full_event)
         for m in raw:
             m_copy = dict(m)
             m_copy["_matchup"] = matchup

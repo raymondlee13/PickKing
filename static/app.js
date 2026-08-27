@@ -167,12 +167,14 @@ function correctMultiplier(rowIdx) {
 }
 
 function legRowHtml(r, gameKey, gameLabel, rowIdx) {
-    var css = r.tier === 'TIER A' ? 'tierA' : (r.tier === 'TIER B' ? 'tierB' : 'below');
-    var spread = r.single_book ? 'N/A - SINGLE BOOK' : (r.spread_pct + 'pts');
+    var hasData = r.consensus_pct !== null && r.consensus_pct !== undefined;
+    var css = !hasData ? 'noData' : (r.tier === 'TIER A' ? 'tierA' : (r.tier === 'TIER B' ? 'tierB' : 'below'));
+    var spread = r.single_book ? 'N/A - SINGLE BOOK' : (r.spread_pct != null ? r.spread_pct + 'pts' : 'N/A');
     var shortMarket = r.market.replace('player_', '').replace('batter_', '').replace('pitcher_', '');
     var label = r.player + ' - ' + r.side + ' ' + shortMarket + ' ' + r.point;
     var legId = gameKey + '::' + r.player + '::' + r.market + '::' + r.point;
     var checkedAttr = selectedLegs[legId] ? 'checked' : '';
+    var disabledAttr = hasData ? '' : 'disabled';
     var sideBadge = '<span class="badge badge-side-' + r.side.toLowerCase() + '">' + r.side.toUpperCase() + '</span>';
     var matchupLine = r.matchup ? ('<div class="matchup-line">' + r.matchup + '</div>') : '';
 
@@ -188,18 +190,21 @@ function legRowHtml(r, gameKey, gameLabel, rowIdx) {
     };
     var logDataB64 = btoa(unescape(encodeURIComponent(JSON.stringify(logData))));
 
+    var metaLine = hasData
+        ? ('Line: ' + r.point + ' | Consensus: ' + r.consensus_pct + '% ' + r.side
+            + ' (spread ' + spread + ', books: ' + r.books.join(', ') + ')<br>'
+            + 'Break-even: ' + r.bar + '% | Edge margin: ' + (r.margin >= 0 ? '+' : '') + r.margin.toFixed(1) + ' pts | <strong>' + r.tier + '</strong>')
+        : ('Line: ' + r.point + ' | No consensus book has a safe line to compare against -- can\'t compute a real edge for this one.'
+            + (r.assumed_multiplier ? ' Assumed break-even: ' + r.bar + '%.' : ''));
+
     return '<div class="leg-row ' + css + '">'
         + '<label>'
         + '<input type="checkbox" class="leg-check" data-legid="' + legId + '" data-label="' + label
         + '" data-consensus="' + r.consensus_pct + '" data-gamelabel="' + gameLabel + '" data-logb64="' + logDataB64 + '" '
-        + checkedAttr + ' onchange="toggleLeg(this)">'
+        + checkedAttr + ' ' + disabledAttr + ' onchange="toggleLeg(this)">'
         + '<strong>' + r.player + '</strong> — ' + shortMarket + sideBadge + badgesForRow(r, rowIdx)
         + matchupLine
-        + '<div class="meta">'
-        + 'Line: ' + r.point + ' | Consensus: ' + r.consensus_pct + '% ' + r.side
-        + ' (spread ' + spread + ', books: ' + r.books.join(', ') + ')<br>'
-        + 'Break-even: ' + r.bar + '% | Edge margin: ' + (r.margin >= 0 ? '+' : '') + r.margin.toFixed(1) + ' pts | <strong>' + r.tier + '</strong>'
-        + '</div></label></div>';
+        + '<div class="meta">' + metaLine + '</div></label></div>';
 }
 
 // ---- Search + type filtering ----
@@ -252,7 +257,7 @@ function renderRawPanel() {
         panel.innerHTML = '<div class="game-list-msg">No game selected.</div>';
         return;
     }
-    var raw = currentGameData.rawPrizePicks || [];
+    var raw = currentGameData.rawBooks || [];
     var q = searchQuery.toLowerCase();
 
     var filteredMarkets = raw.map(function(m) {
@@ -264,12 +269,12 @@ function renderRawPanel() {
                 return desc.indexOf(q) !== -1 || key.indexOf(q) !== -1;
             });
         }
-        return { key: m.key, outcomes: outcomes };
+        return { key: m.key, book: m.book, outcomes: outcomes };
     }).filter(function(m) { return m.outcomes.length > 0; });
 
     var header = q
-        ? ('Raw PrizePicks data matching "' + searchQuery + '" (' + filteredMarkets.length + ' market blocks)')
-        : ('Raw PrizePicks data -- all ' + filteredMarkets.length + ' market blocks (type in search to filter)');
+        ? ('Raw data across all books matching "' + searchQuery + '" (' + filteredMarkets.length + ' market blocks)')
+        : ('Raw data across all books -- all ' + filteredMarkets.length + ' market blocks (type in search to filter)');
 
     panel.innerHTML = '<div class="meta">' + header + '</div><pre class="raw-json">' + escapeAttr(JSON.stringify(filteredMarkets, null, 2)) + '</pre>';
 }

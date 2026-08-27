@@ -41,7 +41,7 @@ def render_form(team_a="", team_b="", entry="3", sport="basketball_wnba",
     )
 
 
-def rows_to_payload(rows, bar, team_a, team_b, sport, entry, entry_type, raw_prizepicks=None):
+def rows_to_payload(rows, bar, team_a, team_b, sport, entry, entry_type, raw_books=None):
     game_key = f"{sport}|{team_a.strip().lower()}|{team_b.strip().lower()}|{entry}|{entry_type}"
     type_label = "Power" if entry_type == "power" else "Flex"
     label = f"{team_a} vs {team_b} ({entry}-pick {type_label})"
@@ -50,5 +50,5 @@ def rows_to_payload(rows, bar, team_a, team_b, sport, entry, entry_type, raw_pri
         "label": label,
         "bar": bar,
         "rows": rows,
-        "rawPrizePicks": raw_prizepicks or [],
+        "rawBooks": raw_books or [],
     }

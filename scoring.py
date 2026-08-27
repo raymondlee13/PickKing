@@ -1,6 +1,7 @@
 """Edge-grading logic: consensus de-vigging, tiering, and report building.
 Pure data transforms -- no network calls (see propline_api.py for those)."""
 
+import statistics
 from collections import defaultdict
 
 from goblin_demon_calibration import estimate_multiplier
@@ -77,13 +78,21 @@ def devig_two_way(over_prob, under_prob):
     return over_prob / total if total else None
 
 
-def extract_raw_prizepicks(event, board="prizepicks"):
-    """Raw, unprocessed markets/outcomes for one platform -- used by the
-    in-app raw data viewer so debugging doesn't require Command Prompt."""
+def extract_raw_all_books(event):
+    """Raw markets/outcomes across every bookmaker in the event, each tagged
+    with its source book -- lets the in-app raw data viewer show PrizePicks'
+    line next to every consensus book's for the same player/market, e.g. to
+    check whether a consensus book has a usable line to compare a goblin/demon
+    leg against when PropLine hasn't given us a line_gap for it."""
+    combined = []
     for book in event.get("bookmakers", []):
-        if book["key"] == board:
-            return book.get("markets", [])
-    return []
+        for market in book.get("markets", []):
+            combined.append({
+                "key": market.get("key"),
+                "book": book.get("key"),
+                "outcomes": market.get("outcomes", []),
+            })
+    return combined
 
 
 def extract_pp_lines(event, board="prizepicks"):
@@ -180,6 +189,32 @@ def extract_consensus(event, player, market_key, target_point):
     return results
 
 
+def find_consensus_reference_point(event, player, market_key):
+    """The consensus books' own line for this player/market -- a fallback
+    reference for computing a goblin/demon leg's deviation when PropLine
+    hasn't given us a line_gap for it (see chat: confirmed on a real example
+    where 5 separate consensus books all independently listed the same
+    point). Takes the median across every consensus book's Over/Under point
+    for this player+market (ignoring alt-threshold-style outcomes like
+    "15+ Points" that don't carry a numeric point), rather than trusting a
+    single book that might be an outlier. Returns None if no consensus book
+    has a real point for this player/market at all.
+    """
+    points = []
+    for book in event.get("bookmakers", []):
+        if book["key"] not in CONSENSUS_BOOKS:
+            continue
+        for market in book.get("markets", []):
+            if market["key"] != market_key:
+                continue
+            for outcome in market.get("outcomes", []):
+                if outcome.get("description") == player and outcome.get("point") is not None:
+                    points.append(outcome["point"])
+    if not points:
+        return None
+    return statistics.median(points)
+
+
 def grade_leg(bar, true_prob_pct):
     margin = true_prob_pct - bar
     if margin < TIER_B_MARGIN:
@@ -191,16 +226,65 @@ def grade_leg(bar, true_prob_pct):
     return margin, tier
 
 
+def calibrated_bar_for_leg(event, leg, bar):
+    """(leg_bar, deviation, assumed_multiplier) for a goblin/demon leg --
+    factored out so both a normally-gradeable leg and one with no consensus
+    probability data (see build_report) get the same calibration treatment."""
+    if leg.get("line_gap") is not None:
+        deviation = abs(leg["line_gap"])
+        if leg["dfs_odds_type"] == "goblin":
+            deviation = -deviation
+    else:
+        # PropLine didn't give us a line_gap for this one -- fall back to the
+        # consensus books' own line as the reference instead of leaving it
+        # ungraded-for-type. See find_consensus_reference_point.
+        reference_point = find_consensus_reference_point(event, leg["player"], leg["market"])
+        deviation = (leg["point"] - reference_point
+                     if reference_point is not None and leg["point"] is not None else None)
+
+    assumed_multiplier = None
+    leg_bar = bar
+    if deviation is not None:
+        assumed_multiplier = estimate_multiplier(
+            leg["market"], leg["dfs_odds_type"], deviation, STANDARD_2PICK_LEG_MULTIPLIER)
+        if assumed_multiplier:
+            leg_bar = 100.0 / assumed_multiplier
+    return leg_bar, deviation, assumed_multiplier
+
+
 def build_report(event, bar, board="prizepicks"):
     pp_lines = extract_pp_lines(event, board=board)
     rows = []
     for leg in pp_lines:
+        is_demon_or_goblin_leg = leg["dfs_odds_type"] in ("goblin", "demon")
         consensus = extract_consensus(event, leg["player"], leg["market"], leg["point"])
-        if not consensus:
-            continue
         probs = [c["novig_over_prob"] for c in consensus if c["novig_over_prob"] is not None]
+
         if not probs:
+            if not is_demon_or_goblin_leg:
+                continue  # no probability data and nothing else useful to show
+
+            # No consensus book has a safe match at this leg's own point, so
+            # there's no true hit probability to compute -- don't fabricate
+            # one. Still show the leg with whatever calibrated multiplier we
+            # can find (line_gap or the consensus books' own reference line)
+            # instead of letting it silently vanish from the results.
+            leg_bar, deviation, assumed_multiplier = calibrated_bar_for_leg(event, leg, bar)
+            rows.append({
+                "player": leg["player"], "market": leg["market"], "point": leg["point"],
+                "dfs_type": leg["dfs_odds_type"], "books": [],
+                "type_conflict": leg.get("type_conflict", False),
+                "side": "More",
+                "consensus_pct": None,
+                "spread_pct": None,
+                "single_book": False, "bar": round(leg_bar, 1), "margin": None,
+                "tier": "NO DATA", "estimated": False, "gap": None,
+                "deviation": deviation, "assumed_multiplier": round(assumed_multiplier, 2) if assumed_multiplier else None,
+                "estimate_type": "NO_BOOK", "whole_number": leg["point"] is not None and float(leg["point"]) % 1 == 0,
+                "book_point": None, "over_price": None, "under_price": None,
+            })
             continue
+
         over_pct = (sum(probs) / len(probs)) * 100
         under_pct = 100.0 - over_pct
         # Demon and Goblin lines can ONLY be picked as More/Over on PrizePicks --
@@ -209,7 +293,6 @@ def build_report(event, bar, board="prizepicks"):
         # graded on Over, even in the rare case Under's probability is higher --
         # that just means the Demon/Goblin pick itself is a bad one, not that
         # there's a Less version of it to fall back to.
-        is_demon_or_goblin_leg = leg["dfs_odds_type"] in ("goblin", "demon")
         if is_demon_or_goblin_leg:
             side, true_pct = "More", over_pct
         elif over_pct >= under_pct:
@@ -228,17 +311,8 @@ def build_report(event, bar, board="prizepicks"):
         # this market (see goblin_demon_calibration.py), grade the leg against
         # its own implied break-even instead of the flat bar. Markets without
         # calibration data yet keep the old flat-bar behavior.
-        leg_bar = bar
-        deviation = None
-        assumed_multiplier = None
-        if is_demon_or_goblin_leg and leg.get("line_gap") is not None:
-            deviation = abs(leg["line_gap"])
-            if leg["dfs_odds_type"] == "goblin":
-                deviation = -deviation
-            assumed_multiplier = estimate_multiplier(
-                leg["market"], leg["dfs_odds_type"], deviation, STANDARD_2PICK_LEG_MULTIPLIER)
-            if assumed_multiplier:
-                leg_bar = 100.0 / assumed_multiplier
+        leg_bar, deviation, assumed_multiplier = (
+            calibrated_bar_for_leg(event, leg, bar) if is_demon_or_goblin_leg else (bar, None, None))
 
         margin, tier = grade_leg(leg_bar, true_pct)
 
@@ -246,9 +320,8 @@ def build_report(event, bar, board="prizepicks"):
         # Legend). NOTE: we do NOT do push modeling -- whole-number lines are tagged by
         # their actual matching method (exact/estimated), not auto-labeled PUSH_FITTED,
         # since claiming a push model we haven't built would misrepresent the methodology.
-        # NO_BOOK never occurs here since a row can't exist without at least one book match.
-        is_demon_or_goblin = leg["dfs_odds_type"] in ("goblin", "demon")
-        if is_demon_or_goblin and any_estimate:
+        # (NO_BOOK is used for the no-consensus-data branch above, not reachable here.)
+        if is_demon_or_goblin_leg and any_estimate:
             estimate_type = "GOBLIN_FIT"
         elif any_estimate:
             estimate_type = "ALT_ESTIMATED"
@@ -274,5 +347,5 @@ def build_report(event, bar, board="prizepicks"):
             "estimate_type": estimate_type, "whole_number": whole_number,
             "book_point": rep["book_point"], "over_price": rep["over_price"], "under_price": rep["under_price"],
         })
-    rows.sort(key=lambda r: r["margin"], reverse=True)
+    rows.sort(key=lambda r: r["margin"] if r["margin"] is not None else float("-inf"), reverse=True)
     return rows, bar
