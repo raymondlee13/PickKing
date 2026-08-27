@@ -1,0 +1,26 @@
+# Never commit your API key or workbook path
+config.json
+
+# Your real tracking spreadsheet -- personal data, not code
+PrizePicks_Model_Tracking.xlsx
+*.xlsx
+
+# Python junk
+__pycache__/
+*.pyc
+
+# Scratch files from testing/debugging -- API pulls, saved odds data,
+# one-off debug scripts. None of this is needed to run the app.
+props.json
+*_props.json
+*_events.json
+sports_list.json
+report.txt
+debug_check.py
+crews_props.json
+mlb_props.json
+tennis_events.json
+tennis_props*.json
+golf_events.json
+wnba_props.json
+test_workbook*.xlsx
