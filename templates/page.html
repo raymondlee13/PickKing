@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PickKing</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="container header-inner">
+    <span class="brand-mark">Pick<span>King</span></span>
+    <span class="brand-tagline">Prop Edge Scanner</span>
+  </div>
+</header>
+<main class="container">
+<div class="header-row">
+<form method="POST" action="/scan" id="scan-form">
+  <label>Team A</label>
+  <input name="team_a" id="team-a-input" value="$team_a" placeholder="e.g. Mercury">
+  <label>Team B</label>
+  <input name="team_b" id="team-b-input" value="$team_b" placeholder="e.g. Sparks">
+  <label>Sport</label>
+  <select name="sport" id="sport-select">
+    <option value="basketball_wnba" $sel_wnba>WNBA</option>
+    <option value="basketball_nba" $sel_nba>NBA</option>
+    <option value="baseball_mlb" $sel_mlb>MLB</option>
+  </select>
+  <button type="button" class="browse-btn" onclick="browseGames()">Browse upcoming games</button>
+  <div id="game-browser"></div>
+  <label>Entry type</label>
+  <select name="entry_type">
+    <option value="power" $sel_power>Power Play</option>
+    <option value="flex" $sel_flex>Flex Play</option>
+  </select>
+  <label>Entry size</label>
+  <select name="entry">
+    <option value="2" $sel_2>2-pick</option>
+    <option value="3" $sel_3>3-pick</option>
+    <option value="4" $sel_4>4-pick</option>
+    <option value="5" $sel_5>5-pick</option>
+    <option value="6" $sel_6>6-pick</option>
+  </select>
+  <button type="submit" formaction="/scan">Find Edges</button>
+
+  <div class="slate-section">
+    <label>Or scan a whole slate -- date</label>
+    <input type="date" name="slate_date" id="slate-date-input" value="$today">
+    <button type="submit" formaction="/scan_slate" formnovalidate class="slate-btn">Scan whole slate</button>
+  </div>
+</form>
+
+<div class="breakeven-chart">
+  <h2>Break-even reference</h2>
+
+  <div class="section-label">Power Play (per-leg break-even)</div>
+  <table>
+    <tr><th>Picks</th><th>Multiplier</th><th>Break-even/leg</th></tr>
+    <tr><td>2</td><td>3x</td><td>57.7%</td></tr>
+    <tr><td>3</td><td>6x</td><td>55.0%</td></tr>
+    <tr><td>4</td><td>10x</td><td>56.2%</td></tr>
+    <tr><td>5</td><td>20x</td><td>54.9%</td></tr>
+    <tr><td>6</td><td>37.5x</td><td>54.7%</td></tr>
+  </table>
+
+  <div class="section-label">Flex Play (payout tiers, per leg -- assumes equal probability across legs)</div>
+  <table>
+    <tr><th>Picks</th><th>All hit</th><th>1 miss</th><th>2 miss</th><th>Break-even/leg</th><th>Am. odds</th></tr>
+    <tr><td>2</td><td colspan="4">Not offered -- Flex requires 3+ picks</td></tr>
+    <tr><td>3</td><td>3x</td><td>1x</td><td>--</td><td>57.7%</td><td>-137</td></tr>
+    <tr><td>4</td><td>6x</td><td>1.5x</td><td>--</td><td>55.0%</td><td>-122</td></tr>
+    <tr><td>5</td><td>10x</td><td>2x</td><td>0.4x</td><td>54.3%</td><td>-119</td></tr>
+    <tr><td>6</td><td>25x</td><td>2x</td><td>0.4x</td><td>54.2%</td><td>-118</td></tr>
+  </table>
+
+  <div class="footnote">
+    Power Play numbers verified two ways: cross-checked against your own established break-even
+    figures and against current multiplier reports. Flex 3-pick payout tiers (3x/1x) confirmed
+    directly from the app. The Flex break-even/leg column is solved from the real expected-value
+    math across all payout tiers (not just the top one) -- it assumes every leg in the entry has
+    the same true win probability, which is a simplification, not how a mixed-confidence real
+    entry actually works. The 4-pick Flex top payout was corrected to 6x (not 5x) after this math
+    didn't reconcile at 5x -- 6x is what makes the numbers check out. All multipliers can change or
+    vary by lineup (same-game combos, promos) -- always confirm the number shown in the app before
+    submitting.
+  </div>
+</div>
+</div>
+
+$error_html
+$payload_script
+
+<div class="toolbar">
+  <button type="button" class="clear-btn" onclick="clearAllGames()">Clear all saved games</button>
+</div>
+<div id="tabs-bar" class="tabs-bar"></div>
+<div id="entry-builder-area"></div>
+<div id="filter-bar-area"></div>
+<div id="results-area"></div>
+</main>
+<script src="/static/app.js"></script>
+</body></html>

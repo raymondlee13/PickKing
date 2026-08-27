@@ -1,6 +1,6 @@
 @echo off
 cd /d "%~dp0"
-echo Starting PrizePicks Edge Finder...
+echo Starting PickKing...
 echo.
 python app.py
 pause
