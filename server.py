@@ -2,6 +2,7 @@
 static frontend assets (templates/page.html, static/style.css, static/app.js)."""
 
 import datetime
+import html
 import json
 import os
 import urllib.error
@@ -12,9 +13,9 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from config import load_config
 from excel_logging import log_parlay_to_excel
 from goblin_demon_calibration import estimate_multiplier, record_correction
-from propline_api import find_event, fetch_props, list_upcoming_events, scan_slate
+from propline_api import fetch_props, list_upcoming_events, scan_slate, utc_to_local_date_str
 from scoring import (
-    BASKETBALL_MARKETS, FLEX_BARS, MARKETS_BY_SPORT, POWER_PLAY_BARS,
+    BASKETBALL_MARKETS, DEFAULT_BAR, MARKETS_BY_SPORT,
     STANDARD_2PICK_LEG_MULTIPLIER, build_report, extract_raw_all_books, grade_leg,
 )
 from views import render_form, rows_to_payload
@@ -32,26 +33,41 @@ STATIC_FILES = {
 
 
 class Handler(BaseHTTPRequestHandler):
+    # The client (browser tab closed, navigated away, request cancelled) can
+    # drop the connection while a response is being written -- that's normal
+    # and not a bug in the request logic, so swallow it instead of letting
+    # http.server dump a scary traceback to the console for every occurrence.
+    _DISCONNECT_ERRORS = (ConnectionAbortedError, ConnectionResetError, BrokenPipeError)
+
     def _send_html(self, html, status=200):
-        self.send_response(status)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.end_headers()
-        self.wfile.write(html.encode("utf-8"))
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(html.encode("utf-8"))
+        except self._DISCONNECT_ERRORS:
+            pass
 
     def _send_json(self, obj, status=200):
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.end_headers()
-        self.wfile.write(json.dumps(obj).encode("utf-8"))
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(json.dumps(obj).encode("utf-8"))
+        except self._DISCONNECT_ERRORS:
+            pass
 
     def _send_static(self, filename, content_type):
         with open(os.path.join(STATIC_DIR, filename), "rb") as f:
             data = f.read()
-        self.send_response(200)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Cache-Control", "no-cache")
-        self.end_headers()
-        self.wfile.write(data)
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            self.wfile.write(data)
+        except self._DISCONNECT_ERRORS:
+            pass
 
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
@@ -62,7 +78,11 @@ class Handler(BaseHTTPRequestHandler):
             self._send_static(filename, content_type)
         elif parsed.path == "/games":
             qs = urllib.parse.parse_qs(parsed.query)
-            sport = qs.get("sport", ["basketball_wnba"])[0]
+            sport = qs.get("sport", [""])[0]
+            date_str = qs.get("date", [""])[0]
+            if not sport:
+                self._send_json({"games": []})
+                return
             config = load_config()
             api_key = config.get("api_key", "")
             if not api_key or api_key == "PASTE_YOUR_PROPLINE_KEY_HERE":
@@ -70,6 +90,18 @@ class Handler(BaseHTTPRequestHandler):
                 return
             try:
                 games = list_upcoming_events(sport, api_key)
+                if date_str:
+                    # 3-day window, not an exact match -- most sports don't play
+                    # every day, so a single-date filter often shows nothing.
+                    try:
+                        start = datetime.date.fromisoformat(date_str)
+                    except ValueError:
+                        start = None
+                    if start:
+                        end = (start + datetime.timedelta(days=2)).isoformat()
+                        start = start.isoformat()
+                        games = [g for g in games
+                                 if start <= utc_to_local_date_str(g.get("commence_time")) <= end]
                 self._send_json({"games": games})
             except Exception as e:
                 self._send_json({"error": f"{type(e).__name__}: {e}"}, 500)
@@ -159,11 +191,10 @@ class Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length).decode("utf-8")
         form = urllib.parse.parse_qs(body)
+        event_id = form.get("event_id", [""])[0]
         team_a = form.get("team_a", [""])[0]
         team_b = form.get("team_b", [""])[0]
-        sport = form.get("sport", ["basketball_wnba"])[0]
-        entry = form.get("entry", ["3"])[0]
-        entry_type = form.get("entry_type", ["power"])[0]
+        sport = form.get("sport", [""])[0]
 
         config = load_config()
         api_key = config.get("api_key", "")
@@ -172,58 +203,41 @@ class Handler(BaseHTTPRequestHandler):
             error_html = ('<div class="error">No API key set. Open config.json in this folder '
                            'and paste your PropLine key in place of PASTE_YOUR_PROPLINE_KEY_HERE, '
                            'then restart the app.</div>')
-            self._send_html(render_form(team_a, team_b, entry, sport, entry_type, error_html))
+            self._send_html(render_form(sport, error_html))
             return
 
-        if not team_a.strip() or not team_b.strip():
-            error_html = '<div class="error">Enter both team names, or use "Scan whole slate" instead.</div>'
-            self._send_html(render_form(team_a, team_b, entry, sport, entry_type, error_html))
-            return
-
-        if entry_type == "flex" and entry == "2":
-            error_html = ('<div class="error">Flex Play requires at least 3 picks -- '
-                           'PrizePicks doesn\'t offer a 2-pick Flex option. Pick 3-6, or switch to Power Play.</div>')
-            self._send_html(render_form(team_a, team_b, entry, sport, entry_type, error_html))
+        if not sport or not event_id:
+            error_html = '<div class="error">Pick a sport and a game from the list first.</div>'
+            self._send_html(render_form(sport, error_html))
             return
 
         try:
-            event = find_event(sport, team_a, team_b, api_key)
-            if not event:
-                error_html = (f'<div class="error">Couldn\'t find a game matching "{team_a}" vs '
-                               f'"{team_b}" for this sport/date. Check team spelling or try the other sport.</div>')
-                self._send_html(render_form(team_a, team_b, entry, sport, entry_type, error_html))
-                return
-
             markets = MARKETS_BY_SPORT.get(sport, BASKETBALL_MARKETS)
-            full_event = fetch_props(sport, event["id"], api_key, markets)
+            full_event = fetch_props(sport, event_id, api_key, markets)
             raw_books = extract_raw_all_books(full_event)
 
-            bar_table = POWER_PLAY_BARS if entry_type == "power" else FLEX_BARS
-            bar = bar_table.get(int(entry), 55.0)
-            rows, bar = build_report(full_event, bar)
+            rows, bar = build_report(full_event, DEFAULT_BAR)
 
             if not rows:
                 error_html = '<div class="error">No gradeable legs found -- no overlapping book coverage for this game/market set.</div>'
-                self._send_html(render_form(team_a, team_b, entry, sport, entry_type, error_html))
+                self._send_html(render_form(sport, error_html))
                 return
 
-            payload = rows_to_payload(rows, bar, team_a, team_b, sport, entry, entry_type, raw_books)
-            self._send_html(render_form(team_a, team_b, entry, sport, entry_type, scan_payload=payload))
+            payload = rows_to_payload(rows, bar, event_id, team_a, team_b, sport, raw_books)
+            self._send_html(render_form(sport, scan_payload=payload))
 
         except urllib.error.HTTPError as e:
-            error_html = f'<div class="error">PropLine API error: {e.code} {e.reason}. Check your API key in config.json.</div>'
-            self._send_html(render_form(team_a, team_b, entry, sport, entry_type, error_html))
+            error_html = f'<div class="error">PropLine API error: {e.code} {html.escape(str(e.reason))}. Check your API key in config.json.</div>'
+            self._send_html(render_form(sport, error_html))
         except Exception as e:
-            error_html = f'<div class="error">Something went wrong: {type(e).__name__}: {e}</div>'
-            self._send_html(render_form(team_a, team_b, entry, sport, entry_type, error_html))
+            error_html = f'<div class="error">Something went wrong: {html.escape(f"{type(e).__name__}: {e}")}</div>'
+            self._send_html(render_form(sport, error_html))
 
     def handle_scan_slate(self):
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length).decode("utf-8")
         form = urllib.parse.parse_qs(body)
-        sport = form.get("sport", ["basketball_wnba"])[0]
-        entry = form.get("entry", ["3"])[0]
-        entry_type = form.get("entry_type", ["power"])[0]
+        sport = form.get("sport", [""])[0]
         slate_date = form.get("slate_date", [""])[0]
 
         config = load_config()
@@ -233,42 +247,39 @@ class Handler(BaseHTTPRequestHandler):
             error_html = ('<div class="error">No API key set. Open config.json in this folder '
                            'and paste your PropLine key in place of PASTE_YOUR_PROPLINE_KEY_HERE, '
                            'then restart the app.</div>')
-            self._send_html(render_form("", "", entry, sport, entry_type, error_html))
+            self._send_html(render_form(sport, error_html))
+            return
+
+        if not sport:
+            error_html = '<div class="error">Pick a sport for the slate scan.</div>'
+            self._send_html(render_form(sport, error_html))
             return
 
         if not slate_date:
             error_html = '<div class="error">Pick a date for the slate scan.</div>'
-            self._send_html(render_form("", "", entry, sport, entry_type, error_html))
-            return
-
-        if entry_type == "flex" and entry == "2":
-            error_html = ('<div class="error">Flex Play requires at least 3 picks -- '
-                           'PrizePicks doesn\'t offer a 2-pick Flex option. Pick 3-6, or switch to Power Play.</div>')
-            self._send_html(render_form("", "", entry, sport, entry_type, error_html))
+            self._send_html(render_form(sport, error_html))
             return
 
         try:
-            bar_table = POWER_PLAY_BARS if entry_type == "power" else FLEX_BARS
-            bar = bar_table.get(int(entry), 55.0)
-
+            bar = DEFAULT_BAR
             rows, raw, scanned_games, skipped_games = scan_slate(sport, slate_date, api_key, bar)
 
             if not scanned_games:
                 error_html = f'<div class="error">No {sport.split("_")[-1].upper()} games found on {slate_date}.</div>'
-                self._send_html(render_form("", "", entry, sport, entry_type, error_html))
+                self._send_html(render_form(sport, error_html))
                 return
 
             if not rows:
                 skipped_note = f" ({len(skipped_games)} game(s) failed to fetch.)" if skipped_games else ""
                 error_html = (f'<div class="error">Scanned {len(scanned_games)} game(s) but found no gradeable '
                                f'legs -- no overlapping book coverage.{skipped_note}</div>')
-                self._send_html(render_form("", "", entry, sport, entry_type, error_html))
+                self._send_html(render_form(sport, error_html))
                 return
 
-            sport_label = {"basketball_wnba": "WNBA", "basketball_nba": "NBA", "baseball_mlb": "MLB"}.get(sport, sport)
-            type_label = "Power" if entry_type == "power" else "Flex"
-            game_key = f"{sport}|slate|{slate_date}|{entry}|{entry_type}"
-            label = f"{sport_label} Slate {slate_date} ({entry}-pick {type_label})"
+            sport_label = {"basketball_wnba": "WNBA", "basketball_nba": "NBA", "baseball_mlb": "MLB",
+                           "americanfootball_nfl": "NFL"}.get(sport, sport)
+            game_key = f"{sport}|slate|{slate_date}"
+            label = f"{sport_label} Slate {slate_date}"
             payload = {
                 "gameKey": game_key,
                 "label": label,
@@ -280,14 +291,14 @@ class Handler(BaseHTTPRequestHandler):
             if skipped_games:
                 payload["skippedNote"] = f"{len(skipped_games)} of {len(scanned_games) + len(skipped_games)} games failed to fetch and were skipped."
 
-            self._send_html(render_form("", "", entry, sport, entry_type, scan_payload=payload))
+            self._send_html(render_form(sport, scan_payload=payload))
 
         except urllib.error.HTTPError as e:
-            error_html = f'<div class="error">PropLine API error: {e.code} {e.reason}. Check your API key in config.json.</div>'
-            self._send_html(render_form("", "", entry, sport, entry_type, error_html))
+            error_html = f'<div class="error">PropLine API error: {e.code} {html.escape(str(e.reason))}. Check your API key in config.json.</div>'
+            self._send_html(render_form(sport, error_html))
         except Exception as e:
-            error_html = f'<div class="error">Something went wrong: {type(e).__name__}: {e}</div>'
-            self._send_html(render_form("", "", entry, sport, entry_type, error_html))
+            error_html = f'<div class="error">Something went wrong: {html.escape(f"{type(e).__name__}: {e}")}</div>'
+            self._send_html(render_form(sport, error_html))
 
     def log_message(self, format, *args):
         pass  # keep the console quiet

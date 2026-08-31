@@ -17,20 +17,6 @@ def api_get(path, api_key, extra_params=None):
         return json.loads(resp.read().decode("utf-8"))
 
 
-def find_event(sport_key, team_a, team_b, api_key):
-    """Find the event whose home/away team names contain the two team names given."""
-    events = api_get(f"/sports/{sport_key}/events", api_key)
-    team_a_l = team_a.lower()
-    team_b_l = team_b.lower()
-    for e in events:
-        home = (e.get("home_team") or "").lower()
-        away = (e.get("away_team") or "").lower()
-        combined = home + " " + away
-        if team_a_l in combined and team_b_l in combined:
-            return e
-    return None
-
-
 def fetch_props(sport_key, event_id, api_key, markets):
     return api_get(
         f"/sports/{sport_key}/events/{event_id}/odds",

@@ -25,6 +25,11 @@ TIER_B_MARGIN = 1.5
 # this is what estimate_multiplier divides that observed total by to isolate
 # the alt leg's own contribution. See goblin_demon_calibration.py.
 STANDARD_2PICK_LEG_MULTIPLIER = 100.0 / POWER_PLAY_BARS[2]
+# The app no longer asks for entry type/size upfront (that's decided later, per
+# real entry, in the entry builder using the actual payout multiplier). This is
+# just a single fixed reference bar so legs still get an initial Tier/margin
+# label to sort and filter by -- 3-pick Power's bar, the old default entry.
+DEFAULT_BAR = POWER_PLAY_BARS[3]
 # Safety default flipped after the WNBA assists bug: markets require an EXACT
 # line match unless explicitly whitelisted below as safe to estimate within
 # a small gap. Unconfirmed/new sports (like MLB) inherit this safe default
@@ -33,6 +38,9 @@ WIDE_MARKETS_MAX_GAP = {
     "player_points": 1.0,
     "player_rebounds": 1.0,
     "player_points_rebounds_assists": 1.0,
+    "player_pass_yds": 5.0,
+    "player_rush_yds": 5.0,
+    "player_reception_yds": 5.0,
 }
 DEFAULT_MAX_GAP = 0.0  # exact match only, unless whitelisted above
 
@@ -54,10 +62,20 @@ MLB_MARKETS = ["batter_hits", "batter_home_runs", "batter_rbis", "batter_hits_ru
                "batter_runs_scored", "batter_stolen_bases", "batter_total_bases",
                "pitcher_strikeouts", "pitcher_hits_allowed", "pitcher_walks", "pitcher_outs"]
 
+# Same caveat as MLB above: the-odds-api's standard naming convention, NOT yet
+# confirmed against a real PropLine NFL response. Treat as a starting guess to
+# verify before trusting any NFL output.
+NFL_MARKETS = ["player_pass_yds", "player_pass_tds", "player_pass_completions",
+               "player_pass_attempts", "player_pass_interceptions", "player_rush_yds",
+               "player_rush_attempts", "player_receptions", "player_reception_yds",
+               "player_pass_rush_reception_yds", "player_kicking_points",
+               "player_field_goals", "player_anytime_td"]
+
 MARKETS_BY_SPORT = {
     "basketball_wnba": BASKETBALL_MARKETS,
     "basketball_nba": BASKETBALL_MARKETS,
     "baseball_mlb": MLB_MARKETS,
+    "americanfootball_nfl": NFL_MARKETS,
 }
 
 

@@ -39,10 +39,17 @@ function escapeAttr(str) {
 
 function browseGames() {
     var sport = document.getElementById('sport-select').value;
+    var date = document.getElementById('date-input').value;
     var area = document.getElementById('game-browser');
+
+    if (!sport) {
+        area.innerHTML = '';
+        return;
+    }
+
     area.innerHTML = '<div class="game-list-msg">Loading upcoming games...</div>';
 
-    fetch('/games?sport=' + encodeURIComponent(sport))
+    fetch('/games?sport=' + encodeURIComponent(sport) + '&date=' + encodeURIComponent(date))
         .then(function(resp) { return resp.json(); })
         .then(function(data) {
             if (data.error) {
@@ -51,7 +58,7 @@ function browseGames() {
             }
             var games = data.games || [];
             if (games.length === 0) {
-                area.innerHTML = '<div class="game-list-msg">No upcoming games found for this sport right now.</div>';
+                area.innerHTML = '<div class="game-list-msg">No upcoming games found for this sport in the next 3 days.</div>';
                 return;
             }
             var html = '<div class="game-list">';
@@ -61,7 +68,7 @@ function browseGames() {
                     try { timeStr = new Date(g.commence_time).toLocaleString(); }
                     catch (e) { timeStr = g.commence_time; }
                 }
-                html += '<div class="game-item" data-away="' + escapeAttr(g.away_team) + '" data-home="' + escapeAttr(g.home_team) + '" onclick="pickGame(this.dataset.away, this.dataset.home)">'
+                html += '<div class="game-item" data-id="' + escapeAttr(g.id) + '" data-away="' + escapeAttr(g.away_team) + '" data-home="' + escapeAttr(g.home_team) + '" onclick="pickGame(this.dataset.id, this.dataset.away, this.dataset.home)">'
                     + g.away_team + ' @ ' + g.home_team
                     + (timeStr ? '<span class="game-time">' + timeStr + '</span>' : '')
                     + '</div>';
@@ -74,7 +81,8 @@ function browseGames() {
         });
 }
 
-function pickGame(teamA, teamB) {
+function pickGame(eventId, teamA, teamB) {
+    document.getElementById('event-id-input').value = eventId;
     document.getElementById('team-a-input').value = teamA;
     document.getElementById('team-b-input').value = teamB;
     document.getElementById('scan-form').submit();
@@ -512,4 +520,7 @@ function calcEntry() {
     renderFilterBar();
     renderEntryBuilder();
     if (activeKey && games[activeKey]) renderColumns(games[activeKey]);
+
+    var sportSelect = document.getElementById('sport-select');
+    if (sportSelect && sportSelect.value) browseGames();
 })();

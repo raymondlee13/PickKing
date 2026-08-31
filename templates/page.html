@@ -13,37 +13,26 @@
 <main class="container">
 <div class="header-row">
 <form method="POST" action="/scan" id="scan-form">
-  <label>Team A</label>
-  <input name="team_a" id="team-a-input" value="$team_a" placeholder="e.g. Mercury">
-  <label>Team B</label>
-  <input name="team_b" id="team-b-input" value="$team_b" placeholder="e.g. Sparks">
+  <input type="hidden" name="event_id" id="event-id-input" value="">
+  <input type="hidden" name="team_a" id="team-a-input" value="">
+  <input type="hidden" name="team_b" id="team-b-input" value="">
+
   <label>Sport</label>
-  <select name="sport" id="sport-select">
+  <select name="sport" id="sport-select" onchange="browseGames()">
+    <option value="" $sel_none>-- Select a sport --</option>
     <option value="basketball_wnba" $sel_wnba>WNBA</option>
     <option value="basketball_nba" $sel_nba>NBA</option>
     <option value="baseball_mlb" $sel_mlb>MLB</option>
+    <option value="americanfootball_nfl" $sel_nfl>NFL</option>
   </select>
-  <button type="button" class="browse-btn" onclick="browseGames()">Browse upcoming games</button>
+
+  <label>Date (games list shows this date + the next 2 days; slate scan uses this exact date)</label>
+  <input type="date" name="slate_date" id="date-input" value="$today" onchange="browseGames()">
+
   <div id="game-browser"></div>
-  <label>Entry type</label>
-  <select name="entry_type">
-    <option value="power" $sel_power>Power Play</option>
-    <option value="flex" $sel_flex>Flex Play</option>
-  </select>
-  <label>Entry size</label>
-  <select name="entry">
-    <option value="2" $sel_2>2-pick</option>
-    <option value="3" $sel_3>3-pick</option>
-    <option value="4" $sel_4>4-pick</option>
-    <option value="5" $sel_5>5-pick</option>
-    <option value="6" $sel_6>6-pick</option>
-  </select>
-  <button type="submit" formaction="/scan">Find Edges</button>
 
   <div class="slate-section">
-    <label>Or scan a whole slate -- date</label>
-    <input type="date" name="slate_date" id="slate-date-input" value="$today">
-    <button type="submit" formaction="/scan_slate" formnovalidate class="slate-btn">Scan whole slate</button>
+    <button type="submit" formaction="/scan_slate" formnovalidate class="slate-btn">Scan whole slate for this date</button>
   </div>
 </form>
 
