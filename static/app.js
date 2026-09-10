@@ -7,7 +7,12 @@ function loadGames() {
     catch (e) { return {}; }
 }
 function saveGames(games) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(games));
+    try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(games));
+        return true;
+    } catch (e) {
+        return false;
+    }
 }
 
 function renderTabs(games, activeKey) {
@@ -504,10 +509,30 @@ function calcEntry() {
     if (payloadEl) {
         try {
             var payload = JSON.parse(payloadEl.textContent);
-            games[payload.gameKey] = payload;
-            saveGames(games);
-            activeKey = payload.gameKey;
-            localStorage.setItem(ACTIVE_KEY, activeKey);
+            var newKey = payload.gameKey;
+            games[newKey] = payload;
+
+            if (!saveGames(games)) {
+                // Storage is full -- evict older tabs (oldest saved first, never
+                // the new one) until it fits, instead of failing outright.
+                var otherKeys = Object.keys(games).filter(function(k) { return k !== newKey; });
+                var fitted = false;
+                for (var i = 0; i < otherKeys.length; i++) {
+                    delete games[otherKeys[i]];
+                    if (saveGames(games)) { fitted = true; break; }
+                }
+                if (!fitted) {
+                    delete games[newKey];
+                    games = loadGames();
+                    alert('This scan is too large to save as a tab, even after clearing older '
+                        + 'saved games (browser storage limit). Try a smaller slate or a single game instead.');
+                }
+            }
+
+            if (games[newKey]) {
+                activeKey = newKey;
+                localStorage.setItem(ACTIVE_KEY, activeKey);
+            }
         } catch (e) { /* no valid new scan, ignore */ }
     }
 

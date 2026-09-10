@@ -122,5 +122,39 @@
         1.9
       ]
     ]
+  },
+  "pitcher_strikeouts": {
+    "goblin": [
+      [
+        -2.5,
+        1.9
+      ]
+    ]
+  },
+  "player_reception_yds": {
+    "goblin": [
+      [
+        -34.0,
+        1.9
+      ],
+      [
+        -24.0,
+        1.9
+      ]
+    ],
+    "demon": [
+      [
+        5.0,
+        3.25
+      ]
+    ]
+  },
+  "batter_total_bases": {
+    "goblin": [
+      [
+        -1.0,
+        2.3
+      ]
+    ]
   }
 }

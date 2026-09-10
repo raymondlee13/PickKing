@@ -55,12 +55,18 @@ def utc_to_local_date_str(utc_iso_str):
         return utc_iso_str[:10]  # fallback if the timestamp is malformed
 
 
-def scan_slate(sport_key, date_str, api_key, bar):
+def scan_slate(sport_key, date_str, api_key, bar, include_raw=True):
     """Scan every game on a given date (YYYY-MM-DD, local calendar date) and
     merge results into one combined, re-sorted list. Each row is tagged with
     which matchup it came from. A game that fails to fetch is skipped, not
     fatal to the rest -- reported back via skipped_games so the caller can
-    show what happened."""
+    show what happened.
+
+    include_raw=False skips building the raw all-books dump entirely -- for a
+    full slate that's megabytes per game (a 12-game MLB slate measured at
+    ~18MB), which blew past the browser's localStorage quota and made scanned
+    tabs silently fail to save. It's only ever used for the optional "Show
+    raw data" debug panel, so slate scans skip it; single-game scans keep it."""
     all_events = list_upcoming_events(sport_key, api_key)
     matching = [e for e in all_events if utc_to_local_date_str(e.get("commence_time")) == date_str]
 
@@ -78,11 +84,12 @@ def scan_slate(sport_key, date_str, api_key, bar):
             skipped_games.append(f"{matchup} ({type(e).__name__})")
             continue
 
-        raw = extract_raw_all_books(full_event)
-        for m in raw:
-            m_copy = dict(m)
-            m_copy["_matchup"] = matchup
-            combined_raw.append(m_copy)
+        if include_raw:
+            raw = extract_raw_all_books(full_event)
+            for m in raw:
+                m_copy = dict(m)
+                m_copy["_matchup"] = matchup
+                combined_raw.append(m_copy)
 
         rows, _ = build_report(full_event, bar)
         for r in rows:

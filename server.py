@@ -262,7 +262,7 @@ class Handler(BaseHTTPRequestHandler):
 
         try:
             bar = DEFAULT_BAR
-            rows, raw, scanned_games, skipped_games = scan_slate(sport, slate_date, api_key, bar)
+            rows, raw, scanned_games, skipped_games = scan_slate(sport, slate_date, api_key, bar, include_raw=False)
 
             if not scanned_games:
                 error_html = f'<div class="error">No {sport.split("_")[-1].upper()} games found on {slate_date}.</div>'
