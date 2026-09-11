@@ -126,6 +126,9 @@ function deleteGame(key) {
 
 function badgesForRow(r, rowIdx) {
     var b = '';
+    if (r._boosted) b += '<span class="badge badge-calib">' + profitBoostPct + '% BOOST APPLIED</span>';
+    if (r.manual) b += '<span class="badge badge-calib">MANUAL</span>';
+    if (r.dfs_type === 'discount') b += '<span class="badge badge-single">DISCOUNT -- standard payout</span>';
     if (r.estimate_type === 'THRESHOLD_LADDER') {
         b += '<span class="badge badge-est">LADDER EST -- single-book, no de-vig</span>';
     } else if (r.estimated) {
@@ -229,6 +232,35 @@ var currentGameData = null;
 var searchQuery = '';
 var typeFilters = { goblin: true, regular: true, demon: true };
 var rawViewOpen = false;
+var profitBoostPct = 0;
+
+// A payout boost (e.g. PrizePicks' "25% profit boost" promos) scales the
+// whole entry's final multiplier, and since a leg's break-even bar is just
+// 100/multiplier, scaling the bar by the same factor is exact -- no need to
+// know the real multiplier, just the % boost. Applied purely as a display
+// transform (never mutates the stored row), so turning the boost off always
+// reverts cleanly. Mirrors grade_leg()'s tiers in scoring.py exactly.
+var TIER_A_MARGIN = 4.0;
+var TIER_B_MARGIN = 1.5;
+
+function tierForMargin(margin) {
+    if (margin < TIER_B_MARGIN) return 'BELOW BAR';
+    if (margin < TIER_A_MARGIN) return 'TIER B';
+    return 'TIER A';
+}
+
+function withBoost(r) {
+    if (!profitBoostPct || r.bar == null) return r;
+    var factor = 1 + profitBoostPct / 100;
+    var boostedBar = Math.round((r.bar / factor) * 10) / 10;
+    var copy = Object.assign({}, r, { bar: boostedBar, _boosted: true });
+    if (r.consensus_pct != null) {
+        var boostedMargin = Math.round((r.consensus_pct - boostedBar) * 10) / 10;
+        copy.margin = boostedMargin;
+        copy.tier = tierForMargin(boostedMargin);
+    }
+    return copy;
+}
 
 function matchesFilters(r) {
     var isGoblin = r.dfs_type === 'goblin';
@@ -249,6 +281,10 @@ function renderFilterBar() {
     var area = document.getElementById('filter-bar-area');
     var html = '<div class="filter-bar">'
         + '<input type="text" id="player-search" placeholder="Search players or stat type (hits, runs, assists...)" oninput="applySearch()">'
+        + '<label style="display:flex;align-items:center;gap:0.4rem;font-size:0.85rem;color:var(--text-secondary);white-space:nowrap;margin:0;">'
+        + 'Profit boost <input type="number" id="profit-boost-input" min="0" step="1" placeholder="0" value="' + (profitBoostPct || '') + '" '
+        + 'style="width:70px;margin:0;padding:0.4rem 0.5rem;" oninput="applyBoost()">%'
+        + '</label>'
         + '<div class="type-toggles">'
         + '<button type="button" class="type-toggle active" data-type="goblin" onclick="toggleTypeFilter(this)">Goblins</button>'
         + '<button type="button" class="type-toggle active" data-type="regular" onclick="toggleTypeFilter(this)">Regular</button>'
@@ -303,6 +339,12 @@ function toggleTypeFilter(btn) {
     renderFilteredColumns();
 }
 
+function applyBoost() {
+    var val = parseFloat(document.getElementById('profit-boost-input').value);
+    profitBoostPct = (val > 0) ? val : 0;
+    renderFilteredColumns();
+}
+
 function applySearch() {
     searchQuery = document.getElementById('player-search').value;
     renderFilteredColumns();
@@ -313,6 +355,128 @@ function renderColumns(gameData) {
     currentGameData = gameData;
     renderFilteredColumns();
     renderRawPanel();
+    renderManualLegForm();
+}
+
+// ---- Manual/discounted picks (e.g. "Taco Tuesday" promos PropLine's feed
+// doesn't carry) -- graded against the same real consensus books as any
+// scanned leg, just fed a hand-typed player/market/point instead of one
+// pulled from PrizePicks' own feed. Needs one specific event's odds to check
+// against, so gameEvents lists every game in the current tab (one entry for
+// a single-game tab, one per game for a slate tab) and the form asks which
+// one the pick belongs to whenever there's more than one to choose from.
+function shortMarketLabel(key) {
+    return key.replace('player_', '').replace('batter_', '').replace('pitcher_', '');
+}
+
+function renderManualLegForm() {
+    var area = document.getElementById('manual-leg-area');
+    if (!area) return;
+    var gd = currentGameData;
+    var gameEvents = (gd && gd.gameEvents) || [];
+
+    if (!gd || gameEvents.length === 0) {
+        area.innerHTML = '';
+        return;
+    }
+
+    var markets = gd.availableMarkets || [];
+    var marketOptions = markets.map(function(m) {
+        return '<option value="' + escapeAttr(m) + '">' + escapeAttr(shortMarketLabel(m)) + '</option>';
+    }).join('');
+
+    var gamePicker = '';
+    if (gameEvents.length > 1) {
+        var gameOptions = gameEvents.map(function(g) {
+            return '<option value="' + escapeAttr(g.eventId) + '">' + escapeAttr(g.matchup) + '</option>';
+        }).join('');
+        gamePicker = '<select id="manual-game" style="width:auto;flex:1 1 220px;margin:0;">' + gameOptions + '</select>';
+    }
+
+    area.innerHTML = '<div class="entry-builder">'
+        + '<strong>Add a manual/discounted pick</strong> '
+        + '<span class="meta" style="margin:0;display:inline;">(for promos like "Taco Tuesday" discounts that PropLine\'s feed doesn\'t carry)</span>'
+        + '<div style="margin-top:0.6rem;display:flex;gap:0.5rem;flex-wrap:wrap;align-items:flex-start;">'
+        + gamePicker
+        + '<input type="text" id="manual-player" placeholder="Player name (exact)" style="width:auto;flex:1 1 180px;margin:0;">'
+        + '<select id="manual-market" style="width:auto;flex:1 1 160px;margin:0;">' + marketOptions + '</select>'
+        + '<input type="number" step="0.5" id="manual-point" placeholder="Line, e.g. 62.5" style="width:auto;flex:0 1 120px;margin:0;">'
+        + '<select id="manual-type" style="width:auto;flex:0 1 220px;margin:0;">'
+        + '<option value="discount" selected>Discount promo (standard payout)</option>'
+        + '<option value="standard">Standard (normal line)</option>'
+        + '<option value="goblin">Goblin (reduced payout)</option>'
+        + '<option value="demon">Demon (boosted payout)</option>'
+        + '</select>'
+        + '<button type="button" onclick="submitManualLeg()" style="margin:0;">Add &amp; grade</button>'
+        + '</div>'
+        + '<div id="manual-leg-result" class="mult-result"></div>'
+        + '</div>';
+}
+
+function submitManualLeg() {
+    var resultEl = document.getElementById('manual-leg-result');
+    var gd = currentGameData;
+    var gameEvents = (gd && gd.gameEvents) || [];
+    if (!gd || gameEvents.length === 0) return;
+
+    var gamePickerEl = document.getElementById('manual-game');
+    var eventId = gamePickerEl ? gamePickerEl.value : gameEvents[0].eventId;
+    var player = document.getElementById('manual-player').value.trim();
+    var market = document.getElementById('manual-market').value;
+    var point = parseFloat(document.getElementById('manual-point').value);
+    var dfsType = document.getElementById('manual-type').value;
+
+    if (!player) { resultEl.innerHTML = '<span style="color:var(--danger)">Enter a player name.</span>'; return; }
+    if (!market) { resultEl.innerHTML = '<span style="color:var(--danger)">Pick a market.</span>'; return; }
+    if (isNaN(point)) { resultEl.innerHTML = '<span style="color:var(--danger)">Enter a valid line.</span>'; return; }
+
+    resultEl.innerHTML = 'Grading...';
+    fetch('/grade_manual', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            sport: gd.sport, event_id: eventId,
+            player: player, market: market, point: point, dfs_type: dfsType
+        })
+    })
+    .then(function(resp) { return resp.json(); })
+    .then(function(data) {
+        if (!data.success) {
+            resultEl.innerHTML = '<span style="color:var(--danger)">' + data.message + '</span>';
+            return;
+        }
+        var matchedGame = gameEvents.filter(function(g) { return g.eventId === eventId; })[0];
+        if (matchedGame) data.row.matchup = matchedGame.matchup;
+        addManualLegRow(data.row);
+        resultEl.innerHTML = '<span style="color:var(--success)">Added -- see it in the results below.</span>';
+    })
+    .catch(function(err) {
+        resultEl.innerHTML = '<span style="color:var(--danger)">Request failed: ' + err + '</span>';
+    });
+}
+
+function addManualLegRow(row) {
+    var games = loadGames();
+    var gd = games[currentGameData.gameKey];
+    if (!gd) return;
+
+    // Replace any existing row for the same player/market/point instead of
+    // duplicating it, e.g. re-adding after picking a different dfs_type.
+    // Manual picks go to the front -- rows render in array order (see
+    // colHtml in renderFilteredColumns), and a manual pick you just added
+    // should be immediately visible, not buried under everything scanned.
+    var idx = gd.rows.findIndex(function(r) {
+        return r.player === row.player && r.market === row.market && r.point === row.point;
+    });
+    if (idx !== -1) gd.rows.splice(idx, 1);
+    gd.rows.unshift(row);
+
+    if (saveGames(games)) {
+        currentGameData = gd;
+        renderFilteredColumns();
+    } else {
+        alert('Could not save this pick -- browser storage is full.');
+    }
 }
 
 function renderFilteredColumns() {
@@ -330,12 +494,15 @@ function renderFilteredColumns() {
 
     function colHtml(list, emptyMsg) {
         if (list.length === 0) return '<div class="empty-col">' + emptyMsg + '</div>';
-        return list.map(function(r) { return legRowHtml(r, gameKey, gameLabel, allRows.indexOf(r)); }).join('');
+        return list.map(function(r) { return legRowHtml(withBoost(r), gameKey, gameLabel, allRows.indexOf(r)); }).join('');
     }
 
+    var barText = profitBoostPct
+        ? (gameData.bar + '% → ' + withBoost({ bar: gameData.bar }).bar + '% with ' + profitBoostPct + '% boost')
+        : (gameData.bar + '%');
     var metaText = rows.length === allRows.length
-        ? (allRows.length + ' legs scanned | break-even bar: ' + gameData.bar + '%')
-        : (rows.length + ' of ' + allRows.length + ' legs shown | break-even bar: ' + gameData.bar + '%');
+        ? (allRows.length + ' legs scanned | break-even bar: ' + barText)
+        : (rows.length + ' of ' + allRows.length + ' legs shown | break-even bar: ' + barText);
 
     var gamesLine = '';
     if (gameData.scannedGames) {

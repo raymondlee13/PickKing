@@ -66,7 +66,15 @@ def scan_slate(sport_key, date_str, api_key, bar, include_raw=True):
     full slate that's megabytes per game (a 12-game MLB slate measured at
     ~18MB), which blew past the browser's localStorage quota and made scanned
     tabs silently fail to save. It's only ever used for the optional "Show
-    raw data" debug panel, so slate scans skip it; single-game scans keep it."""
+    raw data" debug panel, so slate scans skip it; single-game scans keep it.
+
+    Also returns any_prizepicks_board: whether PrizePicks had posted ANY
+    props at all for any scanned game. PrizePicks tends to post its board
+    much closer to game day than the sportsbooks in CONSENSUS_BOOKS, so a
+    slate scanned too far ahead can find real games with zero PrizePicks
+    legs to grade -- a very different situation from PrizePicks having legs
+    that just don't overlap consensus coverage, and worth telling apart in
+    the caller's error message."""
     all_events = list_upcoming_events(sport_key, api_key)
     matching = [e for e in all_events if utc_to_local_date_str(e.get("commence_time")) == date_str]
 
@@ -74,7 +82,9 @@ def scan_slate(sport_key, date_str, api_key, bar, include_raw=True):
     combined_rows = []
     combined_raw = []
     scanned_games = []
+    scanned_game_events = []
     skipped_games = []
+    any_prizepicks_board = False
 
     for event in matching:
         matchup = f"{event['away_team']} @ {event['home_team']}"
@@ -91,11 +101,15 @@ def scan_slate(sport_key, date_str, api_key, bar, include_raw=True):
                 m_copy["_matchup"] = matchup
                 combined_raw.append(m_copy)
 
+        if any(b.get("key") == "prizepicks" for b in full_event.get("bookmakers", [])):
+            any_prizepicks_board = True
+
         rows, _ = build_report(full_event, bar)
         for r in rows:
             r["matchup"] = matchup
         combined_rows.extend(rows)
         scanned_games.append(matchup)
+        scanned_game_events.append({"matchup": matchup, "eventId": event["id"]})
 
     combined_rows.sort(key=lambda r: r["margin"] if r["margin"] is not None else float("-inf"), reverse=True)
-    return combined_rows, combined_raw, scanned_games, skipped_games
+    return combined_rows, combined_raw, scanned_games, skipped_games, scanned_game_events, any_prizepicks_board

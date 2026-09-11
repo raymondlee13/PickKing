@@ -16,7 +16,7 @@ from goblin_demon_calibration import estimate_multiplier, record_correction
 from propline_api import fetch_props, list_upcoming_events, scan_slate, utc_to_local_date_str
 from scoring import (
     BASKETBALL_MARKETS, DEFAULT_BAR, MARKETS_BY_SPORT,
-    STANDARD_2PICK_LEG_MULTIPLIER, build_report, extract_raw_all_books, grade_leg,
+    STANDARD_2PICK_LEG_MULTIPLIER, build_report, extract_raw_all_books, grade_leg, grade_manual_leg,
 )
 from views import render_form, rows_to_payload
 
@@ -117,6 +117,8 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_log_parlay()
         elif self.path == "/calibrate":
             self.handle_calibrate()
+        elif self.path == "/grade_manual":
+            self.handle_grade_manual()
         else:
             self._send_html("<h1>Not found</h1>", 404)
 
@@ -155,6 +157,70 @@ class Handler(BaseHTTPRequestHandler):
             margin, tier = grade_leg(bar, float(consensus_pct))
             result.update({"bar": round(bar, 1), "margin": round(margin, 1), "tier": tier})
         self._send_json(result)
+
+    def handle_grade_manual(self):
+        """Grade a hand-entered line PropLine doesn't carry -- e.g. a PrizePicks
+        promo/discount pick -- against real consensus books, the same way any
+        scanned leg gets graded. Used for one-off picks that don't show up
+        through the normal scan/slate flow."""
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length).decode("utf-8")
+        try:
+            data = json.loads(body)
+        except Exception:
+            self._send_json({"success": False, "message": "Malformed request."})
+            return
+
+        sport = data.get("sport") or ""
+        event_id = data.get("event_id") or ""
+        player = (data.get("player") or "").strip()
+        market = (data.get("market") or "").strip()
+        dfs_type = data.get("dfs_type") or "standard"
+        point = data.get("point")
+
+        if not sport or not event_id:
+            self._send_json({"success": False, "message": "No game selected -- pick a single game's tab first."})
+            return
+        if not player or not market:
+            self._send_json({"success": False, "message": "Enter both a player name and a market."})
+            return
+        try:
+            point = float(point)
+        except (TypeError, ValueError):
+            self._send_json({"success": False, "message": "Enter a valid line (e.g. 62.5)."})
+            return
+        if dfs_type not in ("standard", "goblin", "demon", "discount"):
+            dfs_type = "standard"
+
+        config = load_config()
+        api_key = config.get("api_key", "")
+        if not api_key or api_key == "PASTE_YOUR_PROPLINE_KEY_HERE":
+            self._send_json({"success": False, "message": "No API key set in config.json."})
+            return
+
+        try:
+            markets = MARKETS_BY_SPORT.get(sport, BASKETBALL_MARKETS)
+            if market not in markets:
+                markets = markets + [market]
+            full_event = fetch_props(sport, event_id, api_key, markets)
+        except urllib.error.HTTPError as e:
+            self._send_json({"success": False, "message": f"PropLine API error: {e.code} {e.reason}."})
+            return
+        except Exception as e:
+            self._send_json({"success": False, "message": f"{type(e).__name__}: {e}"})
+            return
+
+        row = grade_manual_leg(full_event, player, market, point, dfs_type, DEFAULT_BAR)
+        if row is None:
+            self._send_json({"success": False, "message": (
+                "No sportsbook has a usable line for this player/market close enough to grade. "
+                "Check the player name matches the sportsbook feed exactly, and that the market "
+                "key is right (e.g. player_reception_yds)."
+            )})
+            return
+
+        row["manual"] = True
+        self._send_json({"success": True, "row": row})
 
     def handle_log_parlay(self):
         length = int(self.headers.get("Content-Length", 0))
@@ -223,7 +289,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_html(render_form(sport, error_html))
                 return
 
-            payload = rows_to_payload(rows, bar, event_id, team_a, team_b, sport, raw_books)
+            payload = rows_to_payload(rows, bar, event_id, team_a, team_b, sport, raw_books, markets)
             self._send_html(render_form(sport, scan_payload=payload))
 
         except urllib.error.HTTPError as e:
@@ -262,7 +328,8 @@ class Handler(BaseHTTPRequestHandler):
 
         try:
             bar = DEFAULT_BAR
-            rows, raw, scanned_games, skipped_games = scan_slate(sport, slate_date, api_key, bar, include_raw=False)
+            rows, raw, scanned_games, skipped_games, scanned_game_events, any_prizepicks_board = scan_slate(
+                sport, slate_date, api_key, bar, include_raw=False)
 
             if not scanned_games:
                 error_html = f'<div class="error">No {sport.split("_")[-1].upper()} games found on {slate_date}.</div>'
@@ -271,8 +338,13 @@ class Handler(BaseHTTPRequestHandler):
 
             if not rows:
                 skipped_note = f" ({len(skipped_games)} game(s) failed to fetch.)" if skipped_games else ""
-                error_html = (f'<div class="error">Scanned {len(scanned_games)} game(s) but found no gradeable '
-                               f'legs -- no overlapping book coverage.{skipped_note}</div>')
+                if not any_prizepicks_board:
+                    error_html = (f'<div class="error">Scanned {len(scanned_games)} game(s), but PrizePicks hasn\'t '
+                                   f'posted any picks for them yet -- they tend to post their board closer to game '
+                                   f'day than sportsbooks do. Try again nearer kickoff.{skipped_note}</div>')
+                else:
+                    error_html = (f'<div class="error">Scanned {len(scanned_games)} game(s) but found no gradeable '
+                                   f'legs -- no overlapping book coverage.{skipped_note}</div>')
                 self._send_html(render_form(sport, error_html))
                 return
 
@@ -287,6 +359,9 @@ class Handler(BaseHTTPRequestHandler):
                 "rows": rows,
                 "rawBooks": raw,
                 "scannedGames": scanned_games,
+                "sport": sport,
+                "gameEvents": scanned_game_events,
+                "availableMarkets": MARKETS_BY_SPORT.get(sport, BASKETBALL_MARKETS),
             }
             if skipped_games:
                 payload["skippedNote"] = f"{len(skipped_games)} of {len(scanned_games) + len(skipped_games)} games failed to fetch and were skipped."

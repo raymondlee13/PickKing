@@ -32,7 +32,7 @@ def render_form(sport="", error_html="", scan_payload=None):
     )
 
 
-def rows_to_payload(rows, bar, event_id, team_a, team_b, sport, raw_books=None):
+def rows_to_payload(rows, bar, event_id, team_a, team_b, sport, raw_books=None, available_markets=None):
     game_key = f"{sport}|{event_id}"
     label = f"{team_a} @ {team_b}"
     return {
@@ -41,4 +41,7 @@ def rows_to_payload(rows, bar, event_id, team_a, team_b, sport, raw_books=None):
         "bar": bar,
         "rows": rows,
         "rawBooks": raw_books or [],
+        "sport": sport,
+        "gameEvents": [{"matchup": label, "eventId": event_id}],
+        "availableMarkets": available_markets or [],
     }
