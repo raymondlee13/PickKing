@@ -93,6 +93,80 @@ function pickGame(eventId, teamA, teamB) {
     document.getElementById('scan-form').submit();
 }
 
+function checkResults() {
+    var statusEl = document.getElementById('check-results-status');
+    if (statusEl) statusEl.textContent = 'Checking...';
+
+    fetch('/check_results', { method: 'POST' })
+        .then(function(resp) { return resp.json(); })
+        .then(function(data) {
+            if (statusEl) statusEl.textContent = data.message || (data.success ? 'Done.' : 'Failed.');
+        })
+        .catch(function(err) {
+            if (statusEl) statusEl.textContent = 'Request failed: ' + err;
+        });
+}
+
+// ---- Calibration report -- see calibration_report.py for why this is
+// split into two different checks instead of one blended "hit rate by
+// tier" number (tier isn't comparable across leg types since goblin/demon
+// bars vary per leg while standard/discount bars are flat).
+function viewCalibrationReport() {
+    var area = document.getElementById('calibration-report-area');
+    area.innerHTML = '<div class="raw-data-panel"><div class="game-list-msg">Loading...</div></div>';
+
+    fetch('/calibration_report')
+        .then(function(resp) { return resp.json(); })
+        .then(function(resp) {
+            if (!resp.success) {
+                area.innerHTML = '<div class="raw-data-panel"><div class="game-list-msg">' + resp.message + '</div></div>';
+                return;
+            }
+            var d = resp.data;
+            if (!d || d.total_graded === 0) {
+                area.innerHTML = '<div class="raw-data-panel"><div class="game-list-msg">' + resp.message + '</div></div>';
+                return;
+            }
+
+            var html = '<div class="raw-data-panel">';
+            html += '<div class="meta">' + d.total_graded + ' graded pick(s) | Brier score: '
+                + (d.brier_score != null ? d.brier_score : 'N/A')
+                + ' (0 = perfect calibration, 0.25 = no better than a coin flip)</div>';
+
+            html += '<div class="section-label" style="margin-top:0.8rem;">Standard/Discount picks by Tier</div>';
+            html += '<div class="meta">Bar is flat for these, so tier ordering is a real, uncounfounded hit-rate check.</div>';
+            if (d.fixed_bar_by_tier.length === 0) {
+                html += '<div class="game-list-msg">No graded standard/discount picks yet.</div>';
+            } else {
+                html += '<table><tr><th>Tier</th><th>N</th><th>Hit Rate</th></tr>';
+                d.fixed_bar_by_tier.forEach(function(row) {
+                    html += '<tr><td>' + row.tier + '</td><td>' + row.n + '</td><td>' + (row.hit_rate * 100).toFixed(1) + '%</td></tr>';
+                });
+                html += '</table>';
+            }
+
+            html += '<div class="section-label" style="margin-top:0.8rem;">Goblin/Demon calibration curve (by predicted probability, not Tier)</div>';
+            html += '<div class="meta">Bar varies per leg for these, so Tier isn\'t comparable across them -- '
+                + 'checking predicted probability vs. actual hit rate instead. A well-calibrated model has '
+                + 'these two columns roughly matching in every row.</div>';
+            if (d.variable_bar_calibration.length === 0) {
+                html += '<div class="game-list-msg">No graded goblin/demon picks yet.</div>';
+            } else {
+                html += '<table><tr><th>Predicted range</th><th>N</th><th>Avg Predicted</th><th>Actual Hit Rate</th></tr>';
+                d.variable_bar_calibration.forEach(function(row) {
+                    html += '<tr><td>' + row.bucket + '</td><td>' + row.n + '</td><td>' + row.avg_predicted
+                        + '%</td><td>' + row.actual_hit_rate + '%</td></tr>';
+                });
+                html += '</table>';
+            }
+            html += '</div>';
+            area.innerHTML = html;
+        })
+        .catch(function(err) {
+            area.innerHTML = '<div class="raw-data-panel"><div class="game-list-msg">Request failed: ' + err + '</div></div>';
+        });
+}
+
 function clearAllGames() {
     if (!confirm('Clear all saved games and any in-progress entry selections? This cannot be undone.')) {
         return;
@@ -208,6 +282,11 @@ function legRowHtml(r, gameKey, gameLabel, rowIdx) {
         estimate_type: r.estimate_type, book_point: r.book_point,
         over_price: r.over_price, under_price: r.under_price,
         books: r.books, matchup: r.matchup || '', spread_pct: r.spread_pct,
+        // sport/event_id (tagged on every row at scan time -- see propline_api.py
+        // scan_slate and server.py handle_scan/handle_grade_manual) let a later
+        // "check results" pass re-fetch this exact game's box score directly,
+        // instead of re-matching team names/dates against the API.
+        sport: r.sport || '', event_id: r.eventId || '',
     };
     var logDataB64 = btoa(unescape(encodeURIComponent(JSON.stringify(logData))));
 
@@ -591,6 +670,7 @@ function selectQualifyingTiers() {
                 estimate_type: r.estimate_type, book_point: r.book_point,
                 over_price: r.over_price, under_price: r.under_price,
                 books: r.books, matchup: r.matchup || '', spread_pct: r.spread_pct,
+                sport: r.sport || '', event_id: r.eventId || '',
             },
         };
         added++;

@@ -40,6 +40,15 @@ def list_upcoming_events(sport_key, api_key):
     return simplified
 
 
+def fetch_event_stats(sport_key, event_id, api_key):
+    """Final (or in-progress) box score for one event -- {status, home_score,
+    away_score, stats: [{player_name, team_abbr, stat_type, stat_value}, ...]}.
+    status is "upcoming" with an empty stats list until the game starts, and
+    "final" once it's over -- see result_grading.py for how this gets turned
+    into W/L for a logged pick."""
+    return api_get(f"/sports/{sport_key}/events/{event_id}/stats", api_key)
+
+
 def utc_to_local_date_str(utc_iso_str):
     """Convert a PropLine UTC timestamp to the local machine's calendar date.
     Needed because comparing raw UTC date strings against a local date was
@@ -107,6 +116,12 @@ def scan_slate(sport_key, date_str, api_key, bar, include_raw=True):
         rows, _ = build_report(full_event, bar)
         for r in rows:
             r["matchup"] = matchup
+            # Tag the exact event + sport a row came from at scan time, not
+            # reconstructed later from the matchup string -- lets a logged
+            # pick be re-checked against real results with a direct API call
+            # instead of a fragile team-name/date re-lookup. See result_grading.py.
+            r["eventId"] = event["id"]
+            r["sport"] = sport_key
         combined_rows.extend(rows)
         scanned_games.append(matchup)
         scanned_game_events.append({"matchup": matchup, "eventId": event["id"]})

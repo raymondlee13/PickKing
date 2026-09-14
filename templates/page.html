@@ -77,8 +77,12 @@ $error_html
 $payload_script
 
 <div class="toolbar">
+  <button type="button" class="browse-btn" onclick="checkResults()">Check results for logged picks</button>
+  <span id="check-results-status" class="meta" style="margin:0 0.75rem;"></span>
+  <button type="button" class="browse-btn" onclick="viewCalibrationReport()">View calibration report</button>
   <button type="button" class="clear-btn" onclick="clearAllGames()">Clear all saved games</button>
 </div>
+<div id="calibration-report-area"></div>
 <div id="tabs-bar" class="tabs-bar"></div>
 <div id="entry-builder-area"></div>
 <div id="manual-leg-area"></div>

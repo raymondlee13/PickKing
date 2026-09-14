@@ -10,8 +10,9 @@ import urllib.parse
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
+from calibration_report import build_report as build_calibration_report
 from config import load_config
-from excel_logging import log_legs_for_tracking, log_parlay_to_excel
+from excel_logging import check_and_fill_results, log_legs_for_tracking, log_parlay_to_excel
 from goblin_demon_calibration import estimate_multiplier, record_correction
 from propline_api import fetch_props, list_upcoming_events, scan_slate, utc_to_local_date_str
 from scoring import (
@@ -105,6 +106,11 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"games": games})
             except Exception as e:
                 self._send_json({"error": f"{type(e).__name__}: {e}"}, 500)
+        elif parsed.path == "/calibration_report":
+            config = load_config()
+            workbook_path = config.get("tracking_workbook_path", "")
+            success, message, data = build_calibration_report(workbook_path)
+            self._send_json({"success": success, "message": message, "data": data})
         else:
             self._send_html("<h1>Not found</h1>", 404)
 
@@ -117,6 +123,8 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_log_parlay()
         elif self.path == "/log_tracking":
             self.handle_log_tracking()
+        elif self.path == "/check_results":
+            self.handle_check_results()
         elif self.path == "/calibrate":
             self.handle_calibrate()
         elif self.path == "/grade_manual":
@@ -222,6 +230,8 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         row["manual"] = True
+        row["eventId"] = event_id
+        row["sport"] = sport
         self._send_json({"success": True, "row": row})
 
     def handle_log_parlay(self):
@@ -281,6 +291,21 @@ class Handler(BaseHTTPRequestHandler):
         success, message = log_legs_for_tracking(workbook_path, legs, date_str)
         self._send_json({"success": success, "message": message})
 
+    def handle_check_results(self):
+        """Re-check every pending logged pick (real entries and tracking-only
+        alike) against real box scores and fill in W/L for whichever games
+        have finished since they were logged."""
+        config = load_config()
+        api_key = config.get("api_key", "")
+        workbook_path = config.get("tracking_workbook_path", "")
+
+        if not api_key or api_key == "PASTE_YOUR_PROPLINE_KEY_HERE":
+            self._send_json({"success": False, "message": "No API key set in config.json."})
+            return
+
+        success, message = check_and_fill_results(workbook_path, api_key)
+        self._send_json({"success": success, "message": message})
+
     def handle_scan(self):
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length).decode("utf-8")
@@ -311,6 +336,9 @@ class Handler(BaseHTTPRequestHandler):
             raw_books = extract_raw_all_books(full_event)
 
             rows, bar = build_report(full_event, DEFAULT_BAR)
+            for r in rows:
+                r["eventId"] = event_id
+                r["sport"] = sport
 
             if not rows:
                 error_html = '<div class="error">No gradeable legs found -- no overlapping book coverage for this game/market set.</div>'

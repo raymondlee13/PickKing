@@ -88,7 +88,7 @@ button:hover { background: var(--accent-hover); }
 
 /* ---- Results view: tabs, entry builder, filter bar, leg columns ---- */
 
-.toolbar { margin-bottom: 0.75rem; display: flex; justify-content: flex-end; }
+.toolbar { margin-bottom: 0.75rem; display: flex; justify-content: flex-end; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
 .clear-btn { background: transparent; border: 1px solid var(--border); color: var(--text-muted); padding: 0.4rem 0.8rem; border-radius: var(--radius-sm); font-size: 0.8rem; cursor: pointer; }
 .clear-btn:hover { background: var(--danger-bg); border-color: var(--danger); color: var(--danger); }
 .tabs-bar { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 1rem; }

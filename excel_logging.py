@@ -2,6 +2,8 @@
 
 import os
 
+from result_grading import build_tag, check_result, parse_tag
+
 try:
     import openpyxl
     OPENPYXL_AVAILABLE = True
@@ -83,6 +85,9 @@ def log_parlay_to_excel(workbook_path, legs, multiplier, entry_type_label, date_
             note += f" Spread: {leg['spread_pct']}pts."
         else:
             note += " Single book."
+        # Embed sport/event/market so a later "check results" pass can
+        # re-fetch this exact game's box score directly -- see result_grading.py.
+        note += " " + build_tag(leg.get("sport", ""), leg.get("event_id", ""), leg.get("market", ""))
 
         r = next_row  # for formula references below, matching the workbook's own formula pattern
         values = [
@@ -187,6 +192,7 @@ def log_legs_for_tracking(workbook_path, legs, date_str):
             note += f" Spread: {leg['spread_pct']}pts."
         else:
             note += " Single book."
+        note += " " + build_tag(leg.get("sport", ""), leg.get("event_id", ""), leg.get("market", ""))
 
         r = next_row
         values = [
@@ -220,3 +226,84 @@ def log_legs_for_tracking(workbook_path, legs, date_str):
         return False, f"Couldn't save workbook: {type(e).__name__}: {e}"
 
     return True, f"Logged {legs_written} leg(s) for tracking (no multiplier -- fill in Result later)."
+
+
+def check_and_fill_results(workbook_path, api_key):
+    """Scan 'Leg Log' for rows with a blank Result but real leg data, re-fetch
+    each one's real box score via the [pk:sport=...,event=...,market=...] tag
+    embedded in its Note column at logging time (see build_tag in
+    result_grading.py), and fill in Actual Value/Result where the game has
+    finished. Rows logged before this tag existed, or where the game hasn't
+    finished yet, are left alone -- counted separately so the caller can
+    report what happened rather than silently doing nothing for them.
+    Returns (success, message).
+    """
+    if not OPENPYXL_AVAILABLE:
+        return False, "openpyxl isn't installed. In Command Prompt run: pip install openpyxl --break-system-packages , then restart the app."
+    if not workbook_path:
+        return False, "No tracking workbook path set. Add \"tracking_workbook_path\" in config.json."
+    if not os.path.exists(workbook_path):
+        return False, f"Workbook not found at: {workbook_path}. Check the path in config.json."
+
+    try:
+        wb = openpyxl.load_workbook(workbook_path)
+    except PermissionError:
+        return False, "Couldn't open the workbook -- close it in Excel first, then try again."
+    except Exception as e:
+        return False, f"Couldn't open workbook: {type(e).__name__}: {e}"
+
+    if "Leg Log" not in wb.sheetnames:
+        return False, "Workbook doesn't have a 'Leg Log' sheet -- wrong file?"
+
+    leg_log = wb["Leg Log"]
+    stats_cache = {}  # (sport, event_id) -> box score, shared across every row this pass
+    graded = pending = no_data = no_tag = 0
+    changed = False
+
+    row = 2
+    while leg_log.cell(row=row, column=5).value not in (None, ""):  # column E = Player
+        player = leg_log.cell(row=row, column=5).value
+        if leg_log.cell(row=row, column=21).value not in (None, ""):  # column U = Result
+            row += 1
+            continue  # already graded, or filled in by hand -- leave it alone
+
+        tag = parse_tag(leg_log.cell(row=row, column=25).value)  # column Y = Note
+        if not tag:
+            no_tag += 1
+            row += 1
+            continue
+
+        side = "More" if str(leg_log.cell(row=row, column=8).value or "").upper() == "MORE" else "Less"
+        point = leg_log.cell(row=row, column=9).value  # column I = Line
+
+        try:
+            status, result, actual_value = check_result(
+                tag["sport"], tag["event_id"], tag["market"], player, point, side, api_key, stats_cache)
+        except Exception:
+            pending += 1  # API hiccup for this one -- try again next pass, don't fail the whole run
+            row += 1
+            continue
+
+        if status != "final":
+            pending += 1
+        elif result is None:
+            no_data += 1
+        else:
+            leg_log.cell(row=row, column=20, value=actual_value)  # column T = Actual Value
+            leg_log.cell(row=row, column=21, value=result)  # column U = Result
+            graded += 1
+            changed = True
+        row += 1
+
+    if changed:
+        try:
+            wb.save(workbook_path)
+        except PermissionError:
+            return False, "Couldn't save -- the workbook is open in Excel. Close it and try again."
+        except Exception as e:
+            return False, f"Couldn't save workbook: {type(e).__name__}: {e}"
+
+    message = (f"Graded {graded} pick(s). {pending} still pending (game not finished yet). "
+               f"{no_data} finished but couldn't match the player/stat. "
+               f"{no_tag} too old to auto-check (logged before this feature existed).")
+    return True, message
