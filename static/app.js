@@ -188,7 +188,8 @@ function correctMultiplier(rowIdx) {
 
 function legRowHtml(r, gameKey, gameLabel, rowIdx) {
     var hasData = r.consensus_pct !== null && r.consensus_pct !== undefined;
-    var css = !hasData ? 'noData' : (r.tier === 'TIER A' ? 'tierA' : (r.tier === 'TIER B' ? 'tierB' : 'below'));
+    var TIER_CSS = { 'TIER S': 'tierS', 'TIER A': 'tierA', 'TIER B': 'tierB', 'TIER C': 'tierC' };
+    var css = !hasData ? 'noData' : (TIER_CSS[r.tier] || 'below');
     var spread = r.single_book ? 'N/A - SINGLE BOOK' : (r.spread_pct != null ? r.spread_pct + 'pts' : 'N/A');
     var shortMarket = r.market.replace('player_', '').replace('batter_', '').replace('pitcher_', '');
     var label = r.player + ' - ' + r.side + ' ' + shortMarket + ' ' + r.point;
@@ -240,13 +241,17 @@ var profitBoostPct = 0;
 // know the real multiplier, just the % boost. Applied purely as a display
 // transform (never mutates the stored row), so turning the boost off always
 // reverts cleanly. Mirrors grade_leg()'s tiers in scoring.py exactly.
-var TIER_A_MARGIN = 4.0;
-var TIER_B_MARGIN = 1.5;
+var TIER_S_MARGIN = 8.0;
+var TIER_A_MARGIN = 5.0;
+var TIER_B_MARGIN = 3.0;
+var TIER_C_MARGIN = 1.5;
 
 function tierForMargin(margin) {
-    if (margin < TIER_B_MARGIN) return 'BELOW BAR';
+    if (margin < TIER_C_MARGIN) return 'BELOW BAR';
+    if (margin < TIER_B_MARGIN) return 'TIER C';
     if (margin < TIER_A_MARGIN) return 'TIER B';
-    return 'TIER A';
+    if (margin < TIER_S_MARGIN) return 'TIER A';
+    return 'TIER S';
 }
 
 function withBoost(r) {
@@ -560,13 +565,55 @@ function removeLeg(legId) {
     renderEntryBuilder();
 }
 
+function selectQualifyingTiers() {
+    if (!currentGameData) return;
+    var gameKey = currentGameData.gameKey;
+    var gameLabel = currentGameData.label;
+    var qualifying = { 'TIER S': true, 'TIER A': true, 'TIER B': true };
+    var added = 0;
+
+    currentGameData.rows.filter(matchesFilters).map(withBoost).forEach(function(r) {
+        var hasData = r.consensus_pct !== null && r.consensus_pct !== undefined;
+        if (!hasData || !qualifying[r.tier]) return;
+
+        var legId = gameKey + '::' + r.player + '::' + r.market + '::' + r.point;
+        if (selectedLegs[legId]) return; // already selected
+
+        var shortMarket = r.market.replace('player_', '').replace('batter_', '').replace('pitcher_', '');
+        selectedLegs[legId] = {
+            label: r.player + ' - ' + r.side + ' ' + shortMarket + ' ' + r.point,
+            consensus_pct: r.consensus_pct,
+            gameLabel: gameLabel,
+            fullData: {
+                player: r.player, market: r.market, point: r.point, side: r.side,
+                dfs_type: r.dfs_type, consensus_pct: r.consensus_pct, bar: r.bar, margin: r.margin,
+                tier: r.tier, whole_number: (r.point !== null && r.point % 1 === 0),
+                estimate_type: r.estimate_type, book_point: r.book_point,
+                over_price: r.over_price, under_price: r.under_price,
+                books: r.books, matchup: r.matchup || '', spread_pct: r.spread_pct,
+            },
+        };
+        added++;
+    });
+
+    saveSelected();
+    renderEntryBuilder();
+    renderFilteredColumns();
+    if (added === 0) {
+        alert('No new Tier A/B/S picks to add from this tab -- either none currently qualify (respecting active filters/boost), or they\'re already selected.');
+    }
+}
+
 function renderEntryBuilder() {
     var area = document.getElementById('entry-builder-area');
     var legIds = Object.keys(selectedLegs);
+    var autoSelectBtn = '<button type="button" class="browse-btn" onclick="selectQualifyingTiers()" style="margin-bottom:0.6rem;">'
+        + 'Select all Tier A/B/S from this tab</button>';
 
     if (legIds.length === 0) {
-        area.innerHTML = '<div class="entry-builder"><strong>Build an entry:</strong> check legs '
-            + '(from any game/tab) to combine them here -- selections carry across tabs.</div>';
+        area.innerHTML = '<div class="entry-builder">' + autoSelectBtn
+            + '<div><strong>Build an entry:</strong> check legs '
+            + '(from any game/tab) to combine them here -- selections carry across tabs.</div></div>';
         return;
     }
 
@@ -577,6 +624,7 @@ function renderEntryBuilder() {
     }).join('');
 
     var html = '<div class="entry-builder">'
+        + autoSelectBtn
         + '<strong>Building entry (' + legIds.length + ' leg' + (legIds.length > 1 ? 's' : '') + '):</strong>'
         + '<div style="margin: 0.4rem 0;">' + listHtml + '</div>'
         + 'Real payout multiplier: '
@@ -587,6 +635,13 @@ function renderEntryBuilder() {
         + '</div>'
         + '<button type="button" class="log-parlay-btn" onclick="logParlay()">Log this parlay</button>'
         + '<div id="log-parlay-result" class="mult-result"></div>'
+        + '<div style="margin-top:0.7rem;padding-top:0.7rem;border-top:1px solid var(--border);">'
+        + '<button type="button" class="browse-btn" onclick="logLegsForTracking()">'
+        + 'Log these legs for tracking only (no multiplier)</button>'
+        + '<div class="meta" style="margin-top:0.3rem;">Records each leg\'s tier and probability now -- '
+        + 'fill in Result (W/L) in the spreadsheet later to check whether tiers actually predict hit rate.</div>'
+        + '<div id="log-tracking-result" class="mult-result"></div>'
+        + '</div>'
         + '</div>';
     area.innerHTML = html;
     calcEntry();
@@ -634,6 +689,38 @@ function logParlay() {
     });
 }
 
+function logLegsForTracking() {
+    var resultEl = document.getElementById('log-tracking-result');
+    var legIds = Object.keys(selectedLegs);
+    var legsForLog = legIds.map(function(legId) { return selectedLegs[legId].fullData; })
+        .filter(function(d) { return d && d.player; });
+
+    if (legsForLog.length === 0) {
+        resultEl.innerHTML = '<span style="color:var(--danger)">No loggable leg data found -- try re-selecting the legs.</span>';
+        return;
+    }
+
+    var today = new Date().toISOString().slice(0, 10);
+
+    resultEl.innerHTML = 'Logging...';
+    fetch('/log_tracking', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ legs: legsForLog, date: today })
+    })
+    .then(function(resp) { return resp.json(); })
+    .then(function(data) {
+        if (data.success) {
+            resultEl.innerHTML = '<span style="color:var(--success)">' + data.message + '</span>';
+        } else {
+            resultEl.innerHTML = '<span style="color:var(--danger)">' + data.message + '</span>';
+        }
+    })
+    .catch(function(err) {
+        resultEl.innerHTML = '<span style="color:var(--danger)">Request failed: ' + err + '</span>';
+    });
+}
+
 function calcEntry() {
     var resultEl = document.getElementById('entry-result');
     var multEl = document.getElementById('entry-mult');
@@ -658,8 +745,9 @@ function calcEntry() {
     }
     var requiredPct = (100.0 / m);
     var marginPts = (combinedPct - requiredPct);
-    var tier = marginPts < 1.5 ? 'BELOW BAR' : (marginPts < 4.0 ? 'TIER B' : 'TIER A');
-    var color = tier === 'TIER A' ? 'var(--accent)' : (tier === 'TIER B' ? 'var(--warning)' : 'var(--text-muted)');
+    var tier = tierForMargin(marginPts);
+    var TIER_COLOR = { 'TIER S': 'var(--success)', 'TIER A': 'var(--accent)', 'TIER B': 'var(--warning)', 'TIER C': 'var(--text-secondary)' };
+    var color = TIER_COLOR[tier] || 'var(--text-muted)';
     resultEl.innerHTML = 'Combined true probability: ' + combinedPct + '% | Required (1/multiplier): '
         + requiredPct.toFixed(1) + '%<br>'
         + 'Real edge margin: ' + (marginPts >= 0 ? '+' : '') + marginPts.toFixed(1) + ' pts | '

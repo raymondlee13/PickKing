@@ -11,7 +11,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from config import load_config
-from excel_logging import log_parlay_to_excel
+from excel_logging import log_legs_for_tracking, log_parlay_to_excel
 from goblin_demon_calibration import estimate_multiplier, record_correction
 from propline_api import fetch_props, list_upcoming_events, scan_slate, utc_to_local_date_str
 from scoring import (
@@ -115,6 +115,8 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_scan_slate()
         elif self.path == "/log_parlay":
             self.handle_log_parlay()
+        elif self.path == "/log_tracking":
+            self.handle_log_tracking()
         elif self.path == "/calibrate":
             self.handle_calibrate()
         elif self.path == "/grade_manual":
@@ -252,6 +254,32 @@ class Handler(BaseHTTPRequestHandler):
 
         success, message, entry_id = log_parlay_to_excel(workbook_path, legs, multiplier, entry_type_label, date_str)
         self._send_json({"success": success, "message": message, "entry_id": entry_id})
+
+    def handle_log_tracking(self):
+        """Log legs individually for tier-accuracy tracking -- no real entry
+        or multiplier needed, just a record of what the model liked so you
+        can fill in W/L later and check whether tiers actually predict hit
+        rate."""
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length).decode("utf-8")
+        try:
+            data = json.loads(body)
+        except Exception:
+            self._send_json({"success": False, "message": "Malformed request."})
+            return
+
+        legs = data.get("legs", [])
+        date_str = data.get("date", datetime.date.today().isoformat())
+
+        if not legs:
+            self._send_json({"success": False, "message": "No legs selected."})
+            return
+
+        config = load_config()
+        workbook_path = config.get("tracking_workbook_path", "")
+
+        success, message = log_legs_for_tracking(workbook_path, legs, date_str)
+        self._send_json({"success": success, "message": message})
 
     def handle_scan(self):
         length = int(self.headers.get("Content-Length", 0))

@@ -17,8 +17,14 @@ POWER_PLAY_BARS = {2: 57.7, 3: 55.0, 4: 56.0, 5: 55.0, 6: 55.0}
 # assumes equal probability across legs, same caveat as the reference chart.
 # Flex has no 2-pick option.
 FLEX_BARS = {3: 57.7, 4: 55.0, 5: 54.3, 6: 54.2}
-TIER_A_MARGIN = 4.0
-TIER_B_MARGIN = 1.5
+# 5-tier spread (widened from an original 3-tier BELOW BAR/B/A split) so a
+# leg's badge reflects how far above the bar it clears, not just whether it
+# does. Below TIER_C_MARGIN stays BELOW BAR; TIER_S is for truly exceptional
+# edges. See grade_leg.
+TIER_S_MARGIN = 8.0
+TIER_A_MARGIN = 5.0
+TIER_B_MARGIN = 3.0
+TIER_C_MARGIN = 1.5
 # The standard leg's own fair multiplier for a 2-pick Power entry, derived
 # from POWER_PLAY_BARS[2] -- every goblin/demon calibration example so far
 # was captured as a real 2-pick entry (one standard leg + one alt leg), so
@@ -311,12 +317,16 @@ def estimate_probability_from_ladder(ladder, target_point):
 
 def grade_leg(bar, true_prob_pct):
     margin = true_prob_pct - bar
-    if margin < TIER_B_MARGIN:
+    if margin < TIER_C_MARGIN:
         tier = "BELOW BAR"
+    elif margin < TIER_B_MARGIN:
+        tier = "TIER C"
     elif margin < TIER_A_MARGIN:
         tier = "TIER B"
-    else:
+    elif margin < TIER_S_MARGIN:
         tier = "TIER A"
+    else:
+        tier = "TIER S"
     return margin, tier
 
 

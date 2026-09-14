@@ -115,8 +115,10 @@ button:hover { background: var(--accent-hover); }
 .leg-row { background: var(--bg-elev-1); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 0.85rem 1rem; margin-bottom: 0.65rem; transition: border-color 120ms ease; }
 .leg-row:hover { border-color: var(--border-strong); }
 .leg-row label { display: block; cursor: pointer; }
+.tierS { border-left: 3px solid var(--success); }
 .tierA { border-left: 3px solid var(--accent); }
 .tierB { border-left: 3px solid var(--warning); }
+.tierC { border-left: 3px solid var(--text-secondary); }
 .below { border-left: 3px solid var(--border-strong); opacity: 0.55; }
 .noData { border-left: 3px dashed var(--border-strong); opacity: 0.7; }
 .noData input[type="checkbox"] { cursor: not-allowed; }

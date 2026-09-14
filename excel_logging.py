@@ -21,7 +21,7 @@ STAT_ABBREV = {
     "pitcher_walks": "BB", "pitcher_outs": "OUTS",
 }
 LINE_TYPE_MAP = {"standard": "STD", "goblin": "GOBLIN", "demon": "DEMON"}
-TIER_CODE_MAP = {"TIER A": "A", "TIER B": "B", "BELOW BAR": "BELOW BAR"}
+TIER_CODE_MAP = {"TIER S": "S", "TIER A": "A", "TIER B": "B", "TIER C": "C", "BELOW BAR": "BELOW BAR"}
 
 
 def log_parlay_to_excel(workbook_path, legs, multiplier, entry_type_label, date_str):
@@ -128,3 +128,95 @@ def log_parlay_to_excel(workbook_path, legs, multiplier, entry_type_label, date_
         return False, f"Couldn't save workbook: {type(e).__name__}: {e}", None
 
     return True, f"Logged {legs_written} leg(s) as entry {entry_id}.", entry_id
+
+
+def log_legs_for_tracking(workbook_path, legs, date_str):
+    """Log legs individually for tier-accuracy tracking -- no real entry, no
+    multiplier, just a record of each leg's tier/probability at the time it
+    was logged. Writes to 'Leg Log' only (never 'Entry Log', since there's no
+    combined real entry here). 'Actual Value'/'Result' stay blank exactly like
+    log_parlay_to_excel's rows -- fill in W/L by hand once the game finishes,
+    and the sheet's existing hit/squared-error formulas do the rest, so you
+    can pivot hit-rate by Tier to see whether the tiers actually predict
+    anything. IDs use a "T<n>" namespace (not "E<n>") so these rows are
+    visually distinguishable from real placed entries in the spreadsheet.
+    Returns (success, message).
+    """
+    if not OPENPYXL_AVAILABLE:
+        return False, "openpyxl isn't installed. In Command Prompt run: pip install openpyxl --break-system-packages , then restart the app."
+    if not workbook_path:
+        return False, "No tracking workbook path set. Add \"tracking_workbook_path\" in config.json."
+    if not os.path.exists(workbook_path):
+        return False, f"Workbook not found at: {workbook_path}. Check the path in config.json."
+
+    try:
+        wb = openpyxl.load_workbook(workbook_path)
+    except PermissionError:
+        return False, "Couldn't open the workbook -- close it in Excel first, then try again."
+    except Exception as e:
+        return False, f"Couldn't open workbook: {type(e).__name__}: {e}"
+
+    if "Leg Log" not in wb.sheetnames:
+        return False, "Workbook doesn't have a 'Leg Log' sheet -- wrong file?"
+
+    leg_log = wb["Leg Log"]
+
+    existing_ids = set()
+    for row in leg_log.iter_rows(min_row=2, max_col=2, values_only=True):
+        eid = row[1]
+        if eid and isinstance(eid, str) and eid.startswith("T") and eid[1:].isdigit():
+            existing_ids.add(int(eid[1:]))
+    next_id_num = (max(existing_ids) + 1) if existing_ids else 1
+
+    next_row = 2
+    while leg_log.cell(row=next_row, column=5).value not in (None, ""):  # column E = Player
+        next_row += 1
+    legs_written = 0
+
+    for leg in legs:
+        stat = STAT_ABBREV.get(leg.get("market", ""), leg.get("market", "").upper())
+        line_type = LINE_TYPE_MAP.get(leg.get("dfs_type", "standard"), "STD")
+        true_pct = leg.get("consensus_pct", 0) / 100.0
+        bar_dec = leg.get("bar", 0) / 100.0
+        tier_code = TIER_CODE_MAP.get(leg.get("tier", ""), leg.get("tier", ""))
+        entry_id = f"T{next_id_num}"
+        next_id_num += 1
+
+        note = f"Tracking-only, not a real placed entry -- logged via Edge Finder app. Books: {', '.join(leg.get('books', []))}."
+        if leg.get("spread_pct") is not None:
+            note += f" Spread: {leg['spread_pct']}pts."
+        else:
+            note += " Single book."
+
+        r = next_row
+        values = [
+            date_str, entry_id, "TRACKING", None,
+            leg.get("player", ""), leg.get("matchup", ""), stat, (leg.get("side") or "").upper(),
+            leg.get("point"), f'=IF(I{r}="","",IF(I{r}=INT(I{r}),"Y","N"))', line_type,
+            leg.get("book_point"), leg.get("over_price"), leg.get("under_price"),
+            true_pct, leg.get("estimate_type", ""), bar_dec,
+            f'=IF(OR(O{r}="",Q{r}=""),"",O{r}-Q{r})',
+            tier_code,
+            None, None,  # Actual Value / Result -- filled in later
+            f'=IF(U{r}="W",1,IF(U{r}="L",0,""))',
+            f'=IF(V{r}="","",(O{r}-V{r})^2)',
+            None,  # CLV Favorable? -- filled in later
+            note,
+        ]
+        for col, val in enumerate(values, start=1):
+            leg_log.cell(row=next_row, column=col, value=val)
+        leg_log.cell(row=next_row, column=15).number_format = '0.0%'
+        leg_log.cell(row=next_row, column=17).number_format = '0.0%'
+        leg_log.cell(row=next_row, column=18).number_format = '0.0%'
+        leg_log.cell(row=next_row, column=23).number_format = '0.0000'
+        next_row += 1
+        legs_written += 1
+
+    try:
+        wb.save(workbook_path)
+    except PermissionError:
+        return False, "Couldn't save -- the workbook is open in Excel. Close it and try again."
+    except Exception as e:
+        return False, f"Couldn't save workbook: {type(e).__name__}: {e}"
+
+    return True, f"Logged {legs_written} leg(s) for tracking (no multiplier -- fill in Result later)."
