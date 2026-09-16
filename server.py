@@ -10,6 +10,7 @@ import urllib.parse
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
+from ai_context import check_context, check_correlation
 from calibration_report import build_report as build_calibration_report
 from config import load_config
 from excel_logging import check_and_fill_results, log_legs_for_tracking, log_parlay_to_excel
@@ -129,6 +130,10 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_calibrate()
         elif self.path == "/grade_manual":
             self.handle_grade_manual()
+        elif self.path == "/check_context":
+            self.handle_check_context()
+        elif self.path == "/check_correlation":
+            self.handle_check_correlation()
         else:
             self._send_html("<h1>Not found</h1>", 404)
 
@@ -234,6 +239,52 @@ class Handler(BaseHTTPRequestHandler):
         row["sport"] = sport
         self._send_json({"success": True, "row": row})
 
+    def handle_check_context(self):
+        """Advisory-only research on one leg (recent performance, matchup
+        history, home/away, injury status) via Gemini + Google Search
+        grounding. Never touches consensus_pct/bar/tier -- see ai_context.py
+        for why that's a deliberate boundary, not an oversight."""
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length).decode("utf-8")
+        try:
+            data = json.loads(body)
+        except Exception:
+            self._send_json({"success": False, "message": "Malformed request."})
+            return
+
+        config = load_config()
+        api_key = config.get("gemini_api_key", "")
+
+        success, text = check_context(
+            player=data.get("player", ""),
+            matchup=data.get("matchup", ""),
+            sport=data.get("sport", ""),
+            market_label=data.get("market_label", ""),
+            side=data.get("side", ""),
+            point=data.get("point"),
+            api_key=api_key,
+        )
+        self._send_json({"success": success, "text": text})
+
+    def handle_check_correlation(self):
+        """Advisory-only correlation check across a built entry's legs via
+        Gemini + Google Search grounding. Flags relationships in plain
+        language; never recalculates the entry's combined probability."""
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length).decode("utf-8")
+        try:
+            data = json.loads(body)
+        except Exception:
+            self._send_json({"success": False, "message": "Malformed request."})
+            return
+
+        config = load_config()
+        api_key = config.get("gemini_api_key", "")
+        legs = data.get("legs", [])
+
+        success, text = check_correlation(legs, api_key)
+        self._send_json({"success": success, "text": text})
+
     def handle_log_parlay(self):
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length).decode("utf-8")
@@ -334,6 +385,15 @@ class Handler(BaseHTTPRequestHandler):
             markets = MARKETS_BY_SPORT.get(sport, BASKETBALL_MARKETS)
             full_event = fetch_props(sport, event_id, api_key, markets)
             raw_books = extract_raw_all_books(full_event)
+            # A normal single game's raw-books dump is small (~500KB) and worth keeping
+            # for the debug "Show raw data" panel. An unusually heavy prime-time game
+            # (many books, 1000+ market blocks) can blow that up past 2MB -- the same
+            # localStorage-bloat problem slate scans hit, just triggered by one big game
+            # instead of many small ones. Drop it past a size threshold rather than
+            # unconditionally, same tradeoff as scan_slate's include_raw=False but only
+            # where it's actually needed.
+            if len(json.dumps(raw_books)) > 750_000:
+                raw_books = []
 
             rows, bar = build_report(full_event, DEFAULT_BAR)
             for r in rows:

@@ -103,7 +103,9 @@ button:hover { background: var(--accent-hover); }
 .entry-builder select { width: auto; display: inline-block; margin: 0; padding: 0.4rem 0.6rem; margin-bottom: 0; }
 .log-parlay-btn { background: var(--accent); color: var(--accent-text); margin-top: 0.7rem; padding: 0.55rem 1.1rem; font-size: 0.9rem; }
 .log-parlay-btn:hover { background: var(--accent-hover); }
-.selected-leg { font-size: 0.85rem; padding: 0.3rem 0; color: var(--text-secondary); }
+.selected-leg { font-size: 0.85rem; padding: 0.4rem 0.5rem; color: var(--text-secondary); cursor: pointer; border-radius: var(--radius-sm); display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; transition: background 120ms ease; }
+.selected-leg:hover { background: var(--danger-bg); color: var(--text); }
+.selected-leg:hover .tab-close { color: var(--danger); }
 .mult-result { font-size: 0.85rem; margin-top: 0.5rem; color: var(--text-secondary); }
 .columns-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; align-items: start; }
 @media (max-width: 900px) { .columns-grid { grid-template-columns: 1fr 1fr; } }
@@ -112,16 +114,35 @@ button:hover { background: var(--accent-hover); }
 .column-header.goblin { color: var(--success); }
 .column-header.demon { color: var(--danger); }
 .column-header.regular { color: var(--accent); }
-.leg-row { background: var(--bg-elev-1); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 0.85rem 1rem; margin-bottom: 0.65rem; transition: border-color 120ms ease; }
-.leg-row:hover { border-color: var(--border-strong); }
-.leg-row label { display: block; cursor: pointer; }
-.tierS { border-left: 3px solid var(--success); }
-.tierA { border-left: 3px solid var(--accent); }
+.leg-row { background: var(--bg-elev-1); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 0.85rem 1rem; margin-bottom: 0.65rem; transition: border-color 120ms ease, background 120ms ease; cursor: pointer; }
+.leg-row:hover { border-color: var(--border-strong); background: var(--bg-elev-2); }
+.leg-row.noData { cursor: not-allowed; }
+.leg-content { display: block; }
+.leg-header { display: flex; align-items: flex-start; gap: 0.5rem; }
+.leg-header .leg-check { flex-shrink: 0; margin-top: 0.15rem; }
+.leg-title { flex: 1 1 auto; min-width: 0; }
+/* S/A picks get a tinted card background, not just a border color -- tier is
+   the single most important signal on the card, so the best picks should be
+   visible while skimming a long list, not just on close inspection. */
+.tierS { border-left: 3px solid var(--success); background: linear-gradient(90deg, var(--success-bg) 0%, var(--bg-elev-1) 22%); }
+.tierA { border-left: 3px solid var(--accent); background: linear-gradient(90deg, rgba(201,161,90,0.12) 0%, var(--bg-elev-1) 22%); }
 .tierB { border-left: 3px solid var(--warning); }
 .tierC { border-left: 3px solid var(--text-secondary); }
 .below { border-left: 3px solid var(--border-strong); opacity: 0.55; }
+.tierUnknown { border-left: 3px dashed var(--text-secondary); }
 .noData { border-left: 3px dashed var(--border-strong); opacity: 0.7; }
 .noData input[type="checkbox"] { cursor: not-allowed; }
+.tier-chip { flex-shrink: 0; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.03em; padding: 0.2rem 0.55rem; border-radius: 999px; white-space: nowrap; }
+.tier-chip.chip-S { background: var(--success-bg); color: var(--success); box-shadow: 0 0 0 1px var(--success) inset; }
+.tier-chip.chip-A { background: rgba(201,161,90,0.16); color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.tier-chip.chip-B { background: var(--warning-bg); color: var(--warning); }
+.tier-chip.chip-C { background: var(--bg-elev-3); color: var(--text-secondary); }
+.tier-chip.chip-below { background: var(--bg-elev-3); color: var(--text-muted); }
+.tier-chip.chip-unknown { background: var(--bg-elev-2); color: var(--text-secondary); box-shadow: 0 0 0 1px var(--text-secondary) inset; }
+.tier-chip.chip-nodata { background: var(--bg-elev-2); color: var(--text-muted); }
+.details-toggle { display: inline-block; background: none; border: none; color: var(--text-muted); font-size: 0.72rem; cursor: pointer; padding: 0.3rem 0 0; margin-top: 0.2rem; text-decoration: underline; text-underline-offset: 2px; }
+.details-toggle:hover { color: var(--text-secondary); }
+.leg-details { margin-top: 0.3rem; }
 .badge { display: inline-block; font-size: 0.65rem; font-weight: 600; letter-spacing: 0.02em; padding: 0.15rem 0.45rem; border-radius: 4px; margin-left: 0.35rem; }
 .badge-est { background: var(--warning-bg); color: var(--warning); }
 .badge-calib { background: var(--bg-elev-3); color: var(--accent); }

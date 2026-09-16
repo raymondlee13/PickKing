@@ -9,13 +9,20 @@ CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.j
 def load_config():
     changed = False
     if not os.path.exists(CONFIG_PATH):
-        config = {"api_key": "PASTE_YOUR_PROPLINE_KEY_HERE", "tracking_workbook_path": ""}
+        config = {
+            "api_key": "PASTE_YOUR_PROPLINE_KEY_HERE",
+            "tracking_workbook_path": "",
+            "gemini_api_key": "PASTE_YOUR_GEMINI_KEY_HERE",
+        }
         changed = True
     else:
         with open(CONFIG_PATH, "r") as f:
             config = json.load(f)
         if "tracking_workbook_path" not in config:
             config["tracking_workbook_path"] = ""
+            changed = True
+        if "gemini_api_key" not in config:
+            config["gemini_api_key"] = "PASTE_YOUR_GEMINI_KEY_HERE"
             changed = True
     if changed:
         with open(CONFIG_PATH, "w") as f:

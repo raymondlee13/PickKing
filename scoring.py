@@ -491,7 +491,16 @@ def _grade_leg(event, leg, bar):
     leg_bar, deviation, assumed_multiplier = (
         calibrated_bar_for_leg(event, leg, bar, ladder) if is_demon_or_goblin_leg else (bar, None, None))
 
-    margin, tier = grade_leg(leg_bar, true_pct)
+    if is_demon_or_goblin_leg and assumed_multiplier is None:
+        # No calibration data yet for this market/deviation -- calibrated_bar_for_leg
+        # falls back to the flat standard bar in that case, but grading against it
+        # would silently assume a payout we don't actually know (a real goblin might
+        # pay far less than what the flat bar implies, a demon far more). Leave it
+        # untiered instead of fabricating a grade. true_pct is still real and shown,
+        # so it still sorts sensibly -- see build_report's sort key below.
+        leg_bar, margin, tier = None, None, "UNKNOWN"
+    else:
+        margin, tier = grade_leg(leg_bar, true_pct)
 
     # Estimate-type taxonomy for spreadsheet logging (see PrizePicks_Model_Tracking.xlsx
     # Legend). NOTE: we do NOT do push modeling -- whole-number lines are tagged by
@@ -526,7 +535,9 @@ def _grade_leg(event, leg, bar):
         "side": side,
         "consensus_pct": round(true_pct, 1),
         "spread_pct": round(spread_pct, 1) if spread_pct is not None else None,
-        "single_book": single_book, "bar": round(leg_bar, 1), "margin": round(margin, 1),
+        "single_book": single_book,
+        "bar": round(leg_bar, 1) if leg_bar is not None else None,
+        "margin": round(margin, 1) if margin is not None else None,
         "tier": tier, "estimated": any_estimate, "gap": round(max_gap, 1),
         "deviation": deviation, "assumed_multiplier": round(assumed_multiplier, 2) if assumed_multiplier else None,
         "estimate_type": estimate_type, "whole_number": whole_number,
@@ -534,10 +545,33 @@ def _grade_leg(event, leg, bar):
     }
 
 
+# Sort priority, best to worst: a real graded tier (S/A/B/C, ranked by
+# margin) > UNKNOWN (goblin/demon with no calibration data -- a real
+# probability, just no verdict on its unknown payout) > BELOW BAR (a real
+# grade that's confirmed to miss its bar) > NO DATA (no probability at all).
+# UNKNOWN sits above BELOW BAR deliberately: "we don't know" is more
+# promising than "we know this misses" -- see chat.
+_TIER_BUCKET = {"TIER S": 3, "TIER A": 3, "TIER B": 3, "TIER C": 3, "UNKNOWN": 2, "BELOW BAR": 1, "NO DATA": 0}
+
+
+def row_sort_key(r):
+    """Shared by build_report and scan_slate so both sort identically."""
+    bucket = _TIER_BUCKET.get(r["tier"], 0)
+    if bucket == 3:
+        rank = r["margin"]
+    elif bucket == 2:
+        rank = r["consensus_pct"] if r["consensus_pct"] is not None else -1
+    elif bucket == 1:
+        rank = r["margin"] if r["margin"] is not None else -1
+    else:
+        rank = 0
+    return (bucket, rank)
+
+
 def build_report(event, bar, board="prizepicks"):
     pp_lines = extract_pp_lines(event, board=board)
     rows = [row for row in (_grade_leg(event, leg, bar) for leg in pp_lines) if row is not None]
-    rows.sort(key=lambda r: r["margin"] if r["margin"] is not None else float("-inf"), reverse=True)
+    rows.sort(key=row_sort_key, reverse=True)
     return rows, bar
 
 

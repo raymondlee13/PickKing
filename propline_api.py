@@ -5,7 +5,7 @@ import json
 import urllib.parse
 import urllib.request
 
-from scoring import MARKETS_BY_SPORT, BASKETBALL_MARKETS, extract_raw_all_books, build_report
+from scoring import MARKETS_BY_SPORT, BASKETBALL_MARKETS, extract_raw_all_books, build_report, row_sort_key
 
 
 def api_get(path, api_key, extra_params=None):
@@ -126,5 +126,5 @@ def scan_slate(sport_key, date_str, api_key, bar, include_raw=True):
         scanned_games.append(matchup)
         scanned_game_events.append({"matchup": matchup, "eventId": event["id"]})
 
-    combined_rows.sort(key=lambda r: r["margin"] if r["margin"] is not None else float("-inf"), reverse=True)
+    combined_rows.sort(key=row_sort_key, reverse=True)
     return combined_rows, combined_raw, scanned_games, skipped_games, scanned_game_events, any_prizepicks_board
