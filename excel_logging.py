@@ -2,7 +2,8 @@
 
 import os
 
-from result_grading import build_tag, check_result, parse_tag
+from result_grading import build_tag, check_clv, check_result, parse_tag
+from scoring import poisson_binomial_dist
 
 try:
     import openpyxl
@@ -26,10 +27,17 @@ LINE_TYPE_MAP = {"standard": "STD", "goblin": "GOBLIN", "demon": "DEMON"}
 TIER_CODE_MAP = {"TIER S": "S", "TIER A": "A", "TIER B": "B", "TIER C": "C", "BELOW BAR": "BELOW BAR"}
 
 
-def log_parlay_to_excel(workbook_path, legs, multiplier, entry_type_label, date_str):
+def log_parlay_to_excel(workbook_path, legs, multiplier, entry_type_label, date_str,
+                         is_flex=False, one_miss_multiplier=None, two_miss_multiplier=None):
     """
     legs: list of dicts with player/market/point/side/dfs_type/consensus_pct/bar/margin/
           tier/whole_number/estimate_type/book_point/over_price/under_price/books/matchup/spread_pct
+
+    is_flex + one_miss_multiplier/two_miss_multiplier: a Flex entry pays out
+    at multiple hit-count tiers (e.g. a 4-pick Flex still pays on 3 of 4
+    hit), unlike Power's true all-or-nothing. Modelled EV only reflects that
+    correctly when these are given -- without them (Power, or a Flex logged
+    before this existed), it falls back to the old all-or-nothing formula.
     Returns (success, message, entry_id).
     """
     if not OPENPYXL_AVAILABLE:
@@ -62,6 +70,7 @@ def log_parlay_to_excel(workbook_path, legs, multiplier, entry_type_label, date_
     entry_id = f"E{(max(existing_ids) + 1) if existing_ids else 1}"
 
     combined_prob = 1.0
+    true_pcts = []  # for the multi-tier Flex EV calc below, needs each leg's own probability
     # Find the first genuinely empty row rather than blindly appending after
     # max_row -- the sheet has hundreds of pre-formatted template rows with
     # formulas already in place but no actual data, and we want to fill those
@@ -76,8 +85,10 @@ def log_parlay_to_excel(workbook_path, legs, multiplier, entry_type_label, date_
         stat = STAT_ABBREV.get(leg.get("market", ""), leg.get("market", "").upper())
         line_type = LINE_TYPE_MAP.get(leg.get("dfs_type", "standard"), "STD")
         true_pct = leg.get("consensus_pct", 0) / 100.0
-        bar_dec = leg.get("bar", 0) / 100.0
+        bar_val = leg.get("bar")
+        bar_dec = bar_val / 100.0 if bar_val is not None else None  # UNKNOWN-tier legs have no real bar -- leave blank, don't fabricate 0%
         combined_prob *= true_pct
+        true_pcts.append(true_pct)
         tier_code = TIER_CODE_MAP.get(leg.get("tier", ""), leg.get("tier", ""))
 
         note = f"Logged via Edge Finder app. Books: {', '.join(leg.get('books', []))}."
@@ -114,7 +125,17 @@ def log_parlay_to_excel(workbook_path, legs, multiplier, entry_type_label, date_
         next_row += 1
         legs_written += 1
 
-    modelled_ev = round(combined_prob * multiplier, 3)
+    n = len(true_pcts)
+    if is_flex and n >= 3:
+        dist = poisson_binomial_dist(true_pcts)
+        modelled_ev = dist[n] * multiplier
+        if one_miss_multiplier:
+            modelled_ev += dist[n - 1] * one_miss_multiplier
+        if two_miss_multiplier:
+            modelled_ev += dist[n - 2] * two_miss_multiplier
+        modelled_ev = round(modelled_ev, 3)
+    else:
+        modelled_ev = round(combined_prob * multiplier, 3)
     next_entry_row = 2
     while entry_log.cell(row=next_entry_row, column=2).value not in (None, ""):  # column B = Entry ID
         next_entry_row += 1
@@ -182,7 +203,8 @@ def log_legs_for_tracking(workbook_path, legs, date_str):
         stat = STAT_ABBREV.get(leg.get("market", ""), leg.get("market", "").upper())
         line_type = LINE_TYPE_MAP.get(leg.get("dfs_type", "standard"), "STD")
         true_pct = leg.get("consensus_pct", 0) / 100.0
-        bar_dec = leg.get("bar", 0) / 100.0
+        bar_val = leg.get("bar")
+        bar_dec = bar_val / 100.0 if bar_val is not None else None  # UNKNOWN-tier legs have no real bar -- leave blank, don't fabricate 0%
         tier_code = TIER_CODE_MAP.get(leg.get("tier", ""), leg.get("tier", ""))
         entry_id = f"T{next_id_num}"
         next_id_num += 1
@@ -305,5 +327,82 @@ def check_and_fill_results(workbook_path, api_key):
 
     message = (f"Graded {graded} pick(s). {pending} still pending (game not finished yet). "
                f"{no_data} finished but couldn't match the player/stat. "
+               f"{no_tag} too old to auto-check (logged before this feature existed).")
+    return True, message
+
+
+def check_and_fill_clv(workbook_path, api_key):
+    """Scan 'Leg Log' for rows with a blank 'CLV Favorable?' column, and fill
+    it in once the game has started -- unlike check_and_fill_results, this
+    does NOT wait for the game to finish, since lines lock at kickoff and CLV
+    is knowable as soon as the market closes. Uses the same [pk:...] tag in
+    the Note column as check_and_fill_results. Returns (success, message).
+    """
+    if not OPENPYXL_AVAILABLE:
+        return False, "openpyxl isn't installed. In Command Prompt run: pip install openpyxl --break-system-packages , then restart the app."
+    if not workbook_path:
+        return False, "No tracking workbook path set. Add \"tracking_workbook_path\" in config.json."
+    if not os.path.exists(workbook_path):
+        return False, f"Workbook not found at: {workbook_path}. Check the path in config.json."
+
+    try:
+        wb = openpyxl.load_workbook(workbook_path)
+    except PermissionError:
+        return False, "Couldn't open the workbook -- close it in Excel first, then try again."
+    except Exception as e:
+        return False, f"Couldn't open workbook: {type(e).__name__}: {e}"
+
+    if "Leg Log" not in wb.sheetnames:
+        return False, "Workbook doesn't have a 'Leg Log' sheet -- wrong file?"
+
+    leg_log = wb["Leg Log"]
+    cache = {}  # (sport, event_id, "stats"|"odds", ...) -> fetched data, shared across every row this pass
+    checked = pending = no_line = no_tag = 0
+    changed = False
+
+    row = 2
+    while leg_log.cell(row=row, column=5).value not in (None, ""):  # column E = Player
+        if leg_log.cell(row=row, column=24).value not in (None, ""):  # column X = CLV Favorable?
+            row += 1
+            continue  # already checked, or filled in by hand -- leave it alone
+
+        tag = parse_tag(leg_log.cell(row=row, column=25).value)  # column Y = Note
+        if not tag:
+            no_tag += 1
+            row += 1
+            continue
+
+        player = leg_log.cell(row=row, column=5).value
+        side = "More" if str(leg_log.cell(row=row, column=8).value or "").upper() == "MORE" else "Less"
+        point = leg_log.cell(row=row, column=9).value  # column I = Line
+
+        try:
+            status, favorable, _closing_point = check_clv(
+                tag["sport"], tag["event_id"], tag["market"], player, point, side, api_key, cache)
+        except Exception:
+            pending += 1  # API hiccup for this one -- try again next pass, don't fail the whole run
+            row += 1
+            continue
+
+        if status == "upcoming":
+            pending += 1
+        elif favorable is None:
+            no_line += 1
+        else:
+            leg_log.cell(row=row, column=24, value=("YES" if favorable else "NO"))  # column X
+            checked += 1
+            changed = True
+        row += 1
+
+    if changed:
+        try:
+            wb.save(workbook_path)
+        except PermissionError:
+            return False, "Couldn't save -- the workbook is open in Excel. Close it and try again."
+        except Exception as e:
+            return False, f"Couldn't save workbook: {type(e).__name__}: {e}"
+
+    message = (f"Checked CLV for {checked} pick(s). {pending} still pending (game hasn't started yet). "
+               f"{no_line} started but no current consensus line was found. "
                f"{no_tag} too old to auto-check (logged before this feature existed).")
     return True, message

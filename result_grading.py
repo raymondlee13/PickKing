@@ -9,7 +9,8 @@ name should already match the stats feed's player name for the same game.
 
 import re
 
-from propline_api import fetch_event_stats
+from propline_api import fetch_event_stats, fetch_props
+from scoring import find_consensus_reference_point
 
 # market_key -> PropLine stat_type, confirmed against real completed games.
 STAT_KEY_MAP = {
@@ -147,3 +148,50 @@ def check_result(sport, event_id, market, player, point, side, api_key, stats_ca
     result = grade_pick(market, sport, stats, player, point, side)
     actual_value = _lookup_stat_value(market, sport, stats, player)
     return status, result, actual_value
+
+
+def check_clv(sport, event_id, market, player, point, side, api_key, cache=None):
+    """Compare a logged line against the current consensus line for the same
+    player/market, once the game has started -- lines lock at kickoff, so
+    checking any earlier would just compare against a still-moving number,
+    not a real closing line. Unlike check_result, this does NOT wait for the
+    game to finish; CLV is knowable as soon as the market closes.
+
+    Returns (status, favorable, closing_point):
+      status "upcoming" -- game hasn't started yet, nothing to compare
+      status != "upcoming", favorable True/False -- the closing line moved in
+        your favor / against it, relative to the side you took
+      favorable None -- game started, but no current consensus line was
+        found, or the line hasn't moved at all (neither favorable nor not)
+
+    cache, if given, is a dict this call reads/writes (shared across many
+    calls the same way check_result's stats_cache is) so legs from the same
+    event/market only trigger one status check and one odds fetch each,
+    not one per leg.
+    """
+    stats_key = (sport, event_id, "stats")
+    if cache is not None and stats_key in cache:
+        stats_data = cache[stats_key]
+    else:
+        stats_data = fetch_event_stats(sport, event_id, api_key)
+        if cache is not None:
+            cache[stats_key] = stats_data
+
+    status = stats_data.get("status")
+    if status == "upcoming":
+        return status, None, None
+
+    odds_key = (sport, event_id, "odds", market)
+    if cache is not None and odds_key in cache:
+        full_event = cache[odds_key]
+    else:
+        full_event = fetch_props(sport, event_id, api_key, [market])
+        if cache is not None:
+            cache[odds_key] = full_event
+
+    closing_point = find_consensus_reference_point(full_event, player, market)
+    if closing_point is None or point is None or closing_point == point:
+        return status, None, closing_point
+
+    favorable = (closing_point > point) if side == "More" else (closing_point < point)
+    return status, favorable, closing_point

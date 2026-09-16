@@ -40,27 +40,56 @@ h1, h2, h3 { color: var(--text); font-weight: 600; margin: 0; }
 
 .card { background: var(--bg-elev-1); border: 1px solid var(--border); border-radius: var(--radius-lg); }
 
-form { background: var(--bg-elev-1); border: 1px solid var(--border); padding: 1.75rem clamp(1.25rem, 3vw, 2rem); border-radius: var(--radius-lg); margin: 0; flex: 1 1 380px; min-width: 300px; display: flex; flex-direction: column; justify-content: center; gap: 0.35rem; }
-label { display: block; margin-bottom: 0.35rem; font-size: 0.85rem; font-weight: 500; color: var(--text-secondary); }
-input, select { width: 100%; padding: 0.75rem 0.85rem; margin-bottom: 1.1rem; border-radius: var(--radius-sm); border: 1px solid var(--border-strong); background: var(--bg); color: var(--text); box-sizing: border-box; font-size: 0.95rem; font-family: var(--font); transition: border-color 120ms ease; }
-input:focus, select:focus { outline: none; border-color: var(--accent); }
-button { background: var(--accent); color: var(--accent-text); border: none; padding: 0.85rem 1.5rem; border-radius: var(--radius-sm); cursor: pointer; font-size: 0.95rem; font-weight: 600; margin-top: 0.4rem; transition: background 120ms ease; font-family: var(--font); }
+form { background: var(--bg-elev-1); border: 1px solid var(--border); padding: 1.75rem clamp(1.25rem, 3vw, 2rem); border-radius: var(--radius-lg); margin: 0; flex: 1 1 380px; min-width: 300px; display: flex; flex-direction: column; justify-content: center; gap: 0.35rem; box-shadow: var(--shadow-card); }
+label { display: block; margin-bottom: 0.4rem; font-size: 0.8rem; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; color: var(--text-muted); }
+input, select { width: 100%; padding: 0.7rem 0.85rem; margin-bottom: 0; border-radius: var(--radius-sm); border: 1px solid var(--border-strong); background: var(--bg); color: var(--text); box-sizing: border-box; font-size: 0.95rem; font-family: var(--font); transition: border-color 120ms ease, box-shadow 120ms ease; }
+input:hover, select:hover { border-color: var(--text-muted); }
+input:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(201,161,90,0.15); }
+button { background: var(--accent); color: var(--accent-text); border: none; padding: 0.85rem 1.5rem; border-radius: var(--radius-sm); cursor: pointer; font-size: 0.95rem; font-weight: 600; margin-top: 0.4rem; transition: background 120ms ease, transform 80ms ease; font-family: var(--font); }
 button:hover { background: var(--accent-hover); }
-.slate-section { margin-top: 1.1rem; padding-top: 1.1rem; border-top: 1px solid var(--border); }
+button:active { transform: scale(0.98); }
+
+/* Sport + date side by side instead of stacked full-width -- reads as one
+   compact control bar instead of a tall generic settings form. */
+.scan-controls { display: flex; gap: 0.9rem; margin-bottom: 1rem; }
+.control-group { flex: 1 1 0; min-width: 0; }
+.control-group label { display: flex; align-items: center; gap: 0.35rem; }
+@media (max-width: 480px) { .scan-controls { flex-direction: column; } }
+
+/* A small "?" instead of cramming the explanation into the label itself. */
+.hint-icon { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; border-radius: 50%; background: var(--bg-elev-3); color: var(--text-muted); font-size: 0.62rem; font-weight: 700; text-transform: none; letter-spacing: 0; cursor: help; flex-shrink: 0; }
+.hint-icon:hover, .hint-icon:focus { background: var(--accent); color: var(--accent-text); outline: none; }
+
+.scan-divider { display: flex; align-items: center; gap: 0.75rem; margin: 1.1rem 0; color: var(--text-muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; }
+.scan-divider::before, .scan-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
 .slate-btn { background: transparent; border: 1px solid var(--border-strong); color: var(--text); width: 100%; }
 .slate-btn:hover { background: var(--bg-elev-2); border-color: var(--accent); }
 .matchup-line { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.15rem; }
+.leg-stats { display: flex; flex-wrap: wrap; gap: 0.5rem 1.1rem; margin-top: 0.55rem; }
+.stat { display: flex; flex-direction: column; gap: 0.1rem; }
+.stat-label { font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
+.stat-value { font-size: 0.85rem; color: var(--text); font-weight: 600; }
 .skipped-warning { background: var(--warning-bg); color: var(--warning); padding: 0.6rem 0.9rem; border-radius: var(--radius-sm); margin-bottom: 0.8rem; font-size: 0.85rem; border: 1px solid var(--border); }
 .browse-btn { background: transparent; border: 1px solid var(--border-strong); color: var(--text-secondary); font-size: 0.85rem; padding: 0.55rem 1rem; margin-bottom: 0.6rem; font-weight: 500; }
 .browse-btn:hover { background: var(--bg-elev-2); color: var(--text); }
-#game-browser { margin-bottom: 0.8rem; }
-.game-list { max-height: 220px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); }
-.game-item { padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--border); cursor: pointer; font-size: 0.88rem; }
+#game-browser { margin-bottom: 0.4rem; }
+.game-list { max-height: 260px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-md); }
+.game-day-header { position: sticky; top: 0; background: var(--bg-elev-2); color: var(--text-muted); font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; padding: 0.4rem 0.8rem; border-bottom: 1px solid var(--border); }
+.game-item { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; padding: 0.7rem 0.9rem; border-bottom: 1px solid var(--border); border-left: 3px solid transparent; cursor: pointer; font-size: 0.88rem; transition: background 100ms ease, border-color 100ms ease; }
 .game-item:last-child { border-bottom: none; }
-.game-item:hover { background: var(--bg-elev-2); }
-.game-item .game-time { color: var(--text-muted); font-size: 0.75rem; display: block; margin-top: 0.15rem; }
+.game-item:hover { background: var(--bg-elev-2); border-left-color: var(--accent); }
+.game-teams { font-weight: 500; color: var(--text); }
+.game-at { color: var(--text-muted); font-weight: 400; }
+.game-item .game-time { color: var(--text-muted); font-size: 0.78rem; white-space: nowrap; flex-shrink: 0; }
 .game-list-msg { color: var(--text-muted); font-size: 0.85rem; padding: 0.5rem; }
-.filter-bar { display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center; margin-bottom: 1rem; }
+.game-list-empty { text-align: center; padding: 1.75rem 1rem; border: 1px dashed var(--border); border-radius: var(--radius-md); }
+/* Sticky like .entry-builder below, so changing a filter or the boost % while
+   scrolling deep into a long results list doesn't require scrolling back up
+   first. Same top offset as .entry-builder but a lower z-index, so on the
+   rare tab with enough selected legs to grow tall, the entry builder wins
+   the overlap rather than the two fighting for the same strip. */
+.filter-bar { display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center; margin-bottom: 1rem; position: sticky; top: 1rem; z-index: 9; background: var(--bg); padding: 0.6rem 0; }
 .filter-bar input { width: auto; flex: 1 1 240px; margin: 0; padding: 0.6rem 0.85rem; }
 .type-toggles { display: flex; gap: 0.4rem; flex-wrap: wrap; }
 .type-toggle { background: var(--bg-elev-1); border: 1px solid var(--border); color: var(--text-muted); padding: 0.5rem 0.9rem; border-radius: var(--radius-sm); font-size: 0.82rem; font-weight: 500; cursor: pointer; transition: all 120ms ease; }
@@ -72,8 +101,17 @@ button:hover { background: var(--accent-hover); }
 .raw-data-panel { background: var(--bg-elev-1); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 0.8rem; margin-bottom: 1rem; max-height: 400px; overflow-y: auto; overflow-x: auto; }
 .raw-json { font-family: 'Consolas', 'Monaco', monospace; font-size: 0.75rem; color: var(--text-secondary); white-space: pre-wrap; word-break: break-word; margin: 0.5rem 0 0 0; }
 .error { background: var(--danger-bg); color: var(--danger); padding: 1rem; border-radius: var(--radius-md); margin-bottom: 1rem; border: 1px solid var(--border); }
-.breakeven-chart { background: var(--bg-elev-1); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 1.25rem 1.5rem; flex: 1 1 380px; min-width: 300px; font-size: 0.8rem; overflow-x: auto; }
-.breakeven-chart h2 { font-size: 0.95rem; margin: 0 0 0.75rem 0; color: var(--text); }
+.spinner { display: inline-block; width: 0.9em; height: 0.9em; border: 2px solid var(--border-strong); border-top-color: var(--accent); border-radius: 50%; vertical-align: -0.15em; margin-right: 0.5em; animation: spin 700ms linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-msg { display: inline-flex; align-items: center; }
+/* Collapsed by default -- static reference data that never changes, so it
+   shouldn't cost permanent space in the layout on every view. */
+.breakeven-chart { background: var(--bg-elev-1); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 0.9rem 1.5rem; margin-bottom: 1.75rem; font-size: 0.8rem; overflow-x: auto; }
+.chart-toggle-btn { display: flex; align-items: center; justify-content: space-between; width: 100%; background: none; border: none; padding: 0; margin: 0; cursor: pointer; text-align: left; }
+.chart-toggle-btn:hover h2 { color: var(--accent); }
+.chevron { color: var(--text-muted); font-size: 0.8rem; transition: transform 120ms ease; }
+#breakeven-chart-body { padding-top: 0.75rem; }
+.breakeven-chart h2 { font-size: 0.95rem; margin: 0; color: var(--text); transition: color 120ms ease; }
 .breakeven-chart table { width: 100%; min-width: 360px; border-collapse: collapse; margin-bottom: 0.9rem; }
 .breakeven-chart th { text-align: left; color: var(--text-muted); font-weight: 600; padding: 0.3rem 0.4rem; border-bottom: 1px solid var(--border); }
 .breakeven-chart td { padding: 0.35rem 0.4rem; border-bottom: 1px solid var(--border); color: var(--text-secondary); }
@@ -82,7 +120,7 @@ button:hover { background: var(--accent-hover); }
 .breakeven-chart .footnote { color: var(--text-muted); font-size: 0.72rem; margin-top: 0.6rem; line-height: 1.5; }
 
 @media (max-width: 640px) {
-  form, .breakeven-chart { flex-basis: 100%; min-width: 0; }
+  form { flex-basis: 100%; min-width: 0; }
   .header-inner { flex-direction: column; gap: 0.15rem; }
 }
 

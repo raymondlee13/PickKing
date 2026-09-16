@@ -13,7 +13,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from ai_context import check_context, check_correlation
 from calibration_report import build_report as build_calibration_report
 from config import load_config
-from excel_logging import check_and_fill_results, log_legs_for_tracking, log_parlay_to_excel
+from correlation_report import build_report as build_correlation_report
+from excel_logging import check_and_fill_clv, check_and_fill_results, log_legs_for_tracking, log_parlay_to_excel
 from goblin_demon_calibration import estimate_multiplier, record_correction
 from propline_api import fetch_props, list_upcoming_events, scan_slate, utc_to_local_date_str
 from scoring import (
@@ -112,6 +113,11 @@ class Handler(BaseHTTPRequestHandler):
             workbook_path = config.get("tracking_workbook_path", "")
             success, message, data = build_calibration_report(workbook_path)
             self._send_json({"success": success, "message": message, "data": data})
+        elif parsed.path == "/correlation_report":
+            config = load_config()
+            workbook_path = config.get("tracking_workbook_path", "")
+            success, message, data = build_correlation_report(workbook_path)
+            self._send_json({"success": success, "message": message, "data": data})
         else:
             self._send_html("<h1>Not found</h1>", 404)
 
@@ -126,6 +132,8 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_log_tracking()
         elif self.path == "/check_results":
             self.handle_check_results()
+        elif self.path == "/check_clv":
+            self.handle_check_clv()
         elif self.path == "/calibrate":
             self.handle_calibrate()
         elif self.path == "/grade_manual":
@@ -298,6 +306,9 @@ class Handler(BaseHTTPRequestHandler):
         multiplier = data.get("multiplier")
         entry_type_label = data.get("entry_type_label", "")
         date_str = data.get("date", datetime.date.today().isoformat())
+        is_flex = bool(data.get("is_flex"))
+        one_miss_multiplier = data.get("one_miss_multiplier")
+        two_miss_multiplier = data.get("two_miss_multiplier")
 
         if not legs:
             self._send_json({"success": False, "message": "No legs selected."})
@@ -309,11 +320,21 @@ class Handler(BaseHTTPRequestHandler):
         except (TypeError, ValueError):
             self._send_json({"success": False, "message": "Enter a valid real payout multiplier (e.g. 2.3)."})
             return
+        try:
+            one_miss_multiplier = float(one_miss_multiplier) if one_miss_multiplier is not None else None
+        except (TypeError, ValueError):
+            one_miss_multiplier = None
+        try:
+            two_miss_multiplier = float(two_miss_multiplier) if two_miss_multiplier is not None else None
+        except (TypeError, ValueError):
+            two_miss_multiplier = None
 
         config = load_config()
         workbook_path = config.get("tracking_workbook_path", "")
 
-        success, message, entry_id = log_parlay_to_excel(workbook_path, legs, multiplier, entry_type_label, date_str)
+        success, message, entry_id = log_parlay_to_excel(
+            workbook_path, legs, multiplier, entry_type_label, date_str,
+            is_flex=is_flex, one_miss_multiplier=one_miss_multiplier, two_miss_multiplier=two_miss_multiplier)
         self._send_json({"success": success, "message": message, "entry_id": entry_id})
 
     def handle_log_tracking(self):
@@ -355,6 +376,21 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         success, message = check_and_fill_results(workbook_path, api_key)
+        self._send_json({"success": success, "message": message})
+
+    def handle_check_clv(self):
+        """Check closing line value for every logged pick whose game has
+        started -- unlike handle_check_results, doesn't wait for the game to
+        finish, since lines lock at kickoff and CLV is knowable right away."""
+        config = load_config()
+        api_key = config.get("api_key", "")
+        workbook_path = config.get("tracking_workbook_path", "")
+
+        if not api_key or api_key == "PASTE_YOUR_PROPLINE_KEY_HERE":
+            self._send_json({"success": False, "message": "No API key set in config.json."})
+            return
+
+        success, message = check_and_fill_clv(workbook_path, api_key)
         self._send_json({"success": success, "message": message})
 
     def handle_scan(self):

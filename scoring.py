@@ -315,6 +315,24 @@ def estimate_probability_from_ladder(ladder, target_point):
     return min(max(math.exp(log_p), 0.0001), 0.9999)
 
 
+def poisson_binomial_dist(probs):
+    """P(exactly k of len(probs) independent events occur), for k = 0..N,
+    given each event's own probability -- NOT assuming they're all equal.
+    Needed for Flex entries, which pay out at multiple hit-count tiers
+    (e.g. a 4-pick Flex still pays on 3 of 4 hit), unlike Power's true
+    all-or-nothing -- grading a Flex entry by P(all hit) alone throws away
+    real value from those lower tiers and understates its true EV. Mirrors
+    the same DP used client-side in app.js's calcEntry()."""
+    dist = [1.0]
+    for p in probs:
+        new_dist = [0.0] * (len(dist) + 1)
+        for k, d in enumerate(dist):
+            new_dist[k] += d * (1 - p)
+            new_dist[k + 1] += d * p
+        dist = new_dist
+    return dist
+
+
 def grade_leg(bar, true_prob_pct):
     margin = true_prob_pct - bar
     if margin < TIER_C_MARGIN:

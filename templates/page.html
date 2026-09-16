@@ -12,32 +12,45 @@
 </header>
 <main class="container">
 <div class="header-row">
-<form method="POST" action="/scan" id="scan-form">
+<form method="POST" action="/scan" id="scan-form" onsubmit="return handleScanFormSubmit(this)">
   <input type="hidden" name="event_id" id="event-id-input" value="">
   <input type="hidden" name="team_a" id="team-a-input" value="">
   <input type="hidden" name="team_b" id="team-b-input" value="">
 
-  <label>Sport</label>
-  <select name="sport" id="sport-select" onchange="browseGames()">
-    <option value="" $sel_none>-- Select a sport --</option>
-    <option value="basketball_wnba" $sel_wnba>WNBA</option>
-    <option value="basketball_nba" $sel_nba>NBA</option>
-    <option value="baseball_mlb" $sel_mlb>MLB</option>
-    <option value="americanfootball_nfl" $sel_nfl>NFL</option>
-  </select>
-
-  <label>Date (games list shows this date + the next 2 days; slate scan uses this exact date)</label>
-  <input type="date" name="slate_date" id="date-input" value="$today" onchange="browseGames()">
+  <div class="scan-controls">
+    <div class="control-group">
+      <label for="sport-select">Sport</label>
+      <select name="sport" id="sport-select" onchange="browseGames()">
+        <option value="" $sel_none>Select a sport…</option>
+        <option value="basketball_wnba" $sel_wnba>🏀 WNBA</option>
+        <option value="basketball_nba" $sel_nba>🏀 NBA</option>
+        <option value="baseball_mlb" $sel_mlb>⚾ MLB</option>
+        <option value="americanfootball_nfl" $sel_nfl>🏈 NFL</option>
+      </select>
+    </div>
+    <div class="control-group">
+      <label for="date-input">Date
+        <span class="hint-icon" tabindex="0" title="The games list below shows this date plus the next 2 days. The slate scan button below uses this exact date only.">?</span>
+      </label>
+      <input type="date" name="slate_date" id="date-input" value="$today" onchange="browseGames()">
+    </div>
+  </div>
 
   <div id="game-browser"></div>
 
-  <div class="slate-section">
-    <button type="submit" formaction="/scan_slate" formnovalidate class="slate-btn">Scan whole slate for this date</button>
-  </div>
+  <div class="scan-divider"><span>or</span></div>
+
+  <button type="submit" formaction="/scan_slate" formnovalidate class="slate-btn">Scan whole slate for this date</button>
+  <div id="scan-loading-msg" class="meta" style="display:none;margin-top:0.6rem;"></div>
 </form>
+</div>
 
 <div class="breakeven-chart">
-  <h2>Break-even reference</h2>
+  <button type="button" class="chart-toggle-btn" onclick="toggleBreakevenChart()">
+    <h2>Break-even reference</h2>
+    <span id="breakeven-chevron" class="chevron">▸</span>
+  </button>
+  <div id="breakeven-chart-body" style="display:none;">
 
   <div class="section-label">Power Play (per-leg break-even)</div>
   <table>
@@ -70,7 +83,7 @@
     vary by lineup (same-game combos, promos) -- always confirm the number shown in the app before
     submitting.
   </div>
-</div>
+  </div>
 </div>
 
 $error_html
@@ -79,10 +92,14 @@ $payload_script
 <div class="toolbar">
   <button type="button" class="browse-btn" onclick="checkResults()">Check results for logged picks</button>
   <span id="check-results-status" class="meta" style="margin:0 0.75rem;"></span>
+  <button type="button" class="browse-btn" onclick="checkClv()">Check CLV for logged picks</button>
+  <span id="check-clv-status" class="meta" style="margin:0 0.75rem;"></span>
   <button type="button" class="browse-btn" onclick="viewCalibrationReport()">View calibration report</button>
+  <button type="button" class="browse-btn" onclick="viewCorrelationReport()">View correlation report</button>
   <button type="button" class="clear-btn" onclick="clearAllGames()">Clear all saved games</button>
 </div>
 <div id="calibration-report-area"></div>
+<div id="correlation-report-area"></div>
 <div id="tabs-bar" class="tabs-bar"></div>
 <div id="entry-builder-area"></div>
 <div id="manual-leg-area"></div>
