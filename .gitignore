@@ -1,6 +1,9 @@
 # Never commit your API key or workbook path
 config.json
 
+# Login accounts (salted password hashes, but still personal, not code)
+users.json
+
 # Your real tracking spreadsheet -- personal data, not code
 PrizePicks_Model_Tracking.xlsx
 *.xlsx
@@ -24,3 +27,16 @@ tennis_props*.json
 golf_events.json
 wnba_props.json
 test_workbook*.xlsx
+
+# AI coding assistant tool state -- machine-local, not project code
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+.claude/worktrees/
+.codex/
+.cursor/
+.impeccable/config.local.json
+.impeccable/hook.cache.json
+.impeccable/review/
+
+# Generated knowledge-graph output (graphify skill) -- a build artifact
+graphify-out/

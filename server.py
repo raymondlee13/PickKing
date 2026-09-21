@@ -5,12 +5,16 @@ import datetime
 import html
 import json
 import os
+import socket
 import urllib.error
 import urllib.parse
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from ai_context import check_context, check_correlation
+from auth import (
+    create_session, create_user, destroy_session, parse_session_cookie, username_for_session, verify_user,
+)
 from calibration_report import build_report as build_calibration_report
 from config import load_config
 from correlation_report import build_report as build_correlation_report
@@ -18,10 +22,12 @@ from excel_logging import check_and_fill_clv, check_and_fill_results, log_legs_f
 from goblin_demon_calibration import estimate_multiplier, record_correction
 from propline_api import fetch_props, list_upcoming_events, scan_slate, utc_to_local_date_str
 from scoring import (
-    BASKETBALL_MARKETS, DEFAULT_BAR, MARKETS_BY_SPORT,
+    BASKETBALL_MARKETS, DEFAULT_BAR, MARKETS_BY_SPORT, SPORT_LABELS,
     STANDARD_2PICK_LEG_MULTIPLIER, build_report, extract_raw_all_books, grade_leg, grade_manual_leg,
 )
-from views import render_form, rows_to_payload
+from views import render_form, render_home, render_login, render_register, rows_to_payload
+
+SESSION_COOKIE_MAX_AGE = 60 * 60 * 24 * 30  # 30 days -- a phone shouldn't need to log back in every visit
 
 PORT = 8787
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -72,13 +78,57 @@ class Handler(BaseHTTPRequestHandler):
         except self._DISCONNECT_ERRORS:
             pass
 
+    def _send_redirect(self, location, set_cookie=None):
+        try:
+            self.send_response(303)
+            self.send_header("Location", location)
+            if set_cookie:
+                self.send_header("Set-Cookie", set_cookie)
+            self.end_headers()
+        except self._DISCONNECT_ERRORS:
+            pass
+
+    def _session_cookie(self, token):
+        return f"session={token}; HttpOnly; SameSite=Lax; Path=/; Max-Age={SESSION_COOKIE_MAX_AGE}"
+
+    def _current_user(self):
+        token = parse_session_cookie(self.headers.get("Cookie", ""))
+        return username_for_session(token) if token else None
+
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
-        if parsed.path == "/":
-            self._send_html(render_form())
-        elif parsed.path in STATIC_FILES:
+
+        if parsed.path in STATIC_FILES:
             filename, content_type = STATIC_FILES[parsed.path]
             self._send_static(filename, content_type)
+            return
+
+        user = self._current_user()
+
+        if parsed.path == "/login":
+            self._send_redirect("/") if user else self._send_html(render_login())
+            return
+        if parsed.path == "/register":
+            self._send_redirect("/") if user else self._send_html(render_register())
+            return
+        if parsed.path == "/logout":
+            token = parse_session_cookie(self.headers.get("Cookie", ""))
+            if token:
+                destroy_session(token)
+            self._send_redirect("/login", set_cookie="session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0")
+            return
+
+        if not user:
+            if parsed.path in ("/games", "/calibration_report", "/correlation_report"):
+                self._send_json({"error": "Not logged in."}, 401)
+            else:
+                self._send_redirect("/login")
+            return
+
+        if parsed.path == "/":
+            self._send_html(render_home(user))
+        elif parsed.path == "/app":
+            self._send_html(render_form())
         elif parsed.path == "/games":
             qs = urllib.parse.parse_qs(parsed.query)
             sport = qs.get("sport", [""])[0]
@@ -122,6 +172,20 @@ class Handler(BaseHTTPRequestHandler):
             self._send_html("<h1>Not found</h1>", 404)
 
     def do_POST(self):
+        if self.path == "/login":
+            self.handle_login()
+            return
+        if self.path == "/register":
+            self.handle_register()
+            return
+
+        if not self._current_user():
+            if self.path in ("/scan", "/scan_slate"):
+                self._send_redirect("/login")
+            else:
+                self._send_json({"success": False, "message": "Not logged in."}, 401)
+            return
+
         if self.path == "/scan":
             self.handle_scan()
         elif self.path == "/scan_slate":
@@ -144,6 +208,40 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_check_correlation()
         else:
             self._send_html("<h1>Not found</h1>", 404)
+
+    def handle_login(self):
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length).decode("utf-8")
+        form = urllib.parse.parse_qs(body)
+        username = form.get("username", [""])[0]
+        password = form.get("password", [""])[0]
+
+        if not verify_user(username, password):
+            self._send_html(render_login('<div class="error">Wrong username or password.</div>'))
+            return
+
+        token = create_session(username.strip())
+        self._send_redirect("/", set_cookie=self._session_cookie(token))
+
+    def handle_register(self):
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length).decode("utf-8")
+        form = urllib.parse.parse_qs(body)
+        username = form.get("username", [""])[0]
+        password = form.get("password", [""])[0]
+        confirm = form.get("confirm", [""])[0]
+
+        if password != confirm:
+            self._send_html(render_register('<div class="error">Passwords don\'t match.</div>'))
+            return
+
+        ok, message = create_user(username, password)
+        if not ok:
+            self._send_html(render_register(f'<div class="error">{html.escape(message)}</div>'))
+            return
+
+        token = create_session(username.strip())
+        self._send_redirect("/", set_cookie=self._session_cookie(token))
 
     def handle_calibrate(self):
         length = int(self.headers.get("Content-Length", 0))
@@ -249,9 +347,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def handle_check_context(self):
         """Advisory-only research on one leg (recent performance, matchup
-        history, home/away, injury status) via Gemini + Google Search
-        grounding. Never touches consensus_pct/bar/tier -- see ai_context.py
-        for why that's a deliberate boundary, not an oversight."""
+        history, home/away, injury status) via Tavily search + Groq. Never
+        touches consensus_pct/bar/tier -- see ai_context.py for why that's a
+        deliberate boundary, not an oversight."""
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length).decode("utf-8")
         try:
@@ -261,7 +359,8 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         config = load_config()
-        api_key = config.get("gemini_api_key", "")
+        tavily_key = config.get("tavily_api_key", "")
+        groq_key = config.get("groq_api_key", "")
 
         success, text = check_context(
             player=data.get("player", ""),
@@ -270,14 +369,15 @@ class Handler(BaseHTTPRequestHandler):
             market_label=data.get("market_label", ""),
             side=data.get("side", ""),
             point=data.get("point"),
-            api_key=api_key,
+            tavily_key=tavily_key,
+            groq_key=groq_key,
         )
         self._send_json({"success": success, "text": text})
 
     def handle_check_correlation(self):
         """Advisory-only correlation check across a built entry's legs via
-        Gemini + Google Search grounding. Flags relationships in plain
-        language; never recalculates the entry's combined probability."""
+        Tavily search + Groq. Flags relationships in plain language; never
+        recalculates the entry's combined probability."""
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length).decode("utf-8")
         try:
@@ -287,10 +387,11 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         config = load_config()
-        api_key = config.get("gemini_api_key", "")
+        tavily_key = config.get("tavily_api_key", "")
+        groq_key = config.get("groq_api_key", "")
         legs = data.get("legs", [])
 
-        success, text = check_correlation(legs, api_key)
+        success, text = check_correlation(legs, tavily_key, groq_key)
         self._send_json({"success": success, "text": text})
 
     def handle_log_parlay(self):
@@ -500,8 +601,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_html(render_form(sport, error_html))
                 return
 
-            sport_label = {"basketball_wnba": "WNBA", "basketball_nba": "NBA", "baseball_mlb": "MLB",
-                           "americanfootball_nfl": "NFL"}.get(sport, sport)
+            sport_label = SPORT_LABELS.get(sport, sport)
             game_key = f"{sport}|slate|{slate_date}"
             label = f"{sport_label} Slate {slate_date}"
             payload = {
@@ -531,11 +631,28 @@ class Handler(BaseHTTPRequestHandler):
         pass  # keep the console quiet
 
 
+def _lan_ip():
+    """Best-effort LAN IP for the phone-access hint below. Doesn't actually
+    send anything -- just asks the OS which local interface it would use to
+    reach the internet, which is normally the real WiFi/ethernet address."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+    except OSError:
+        return None
+    finally:
+        s.close()
+
+
 def main():
     load_config()  # creates config.json with a placeholder on first run
-    server = HTTPServer(("localhost", PORT), Handler)
+    server = HTTPServer(("0.0.0.0", PORT), Handler)  # not "localhost" -- reachable from other devices on the network, gated by login
     url = f"http://localhost:{PORT}/"
     print(f"PickKing running at {url}")
+    lan_ip = _lan_ip()
+    if lan_ip:
+        print(f"On your phone (same WiFi): http://{lan_ip}:{PORT}/")
     print("Press Ctrl+C in this window to stop it.")
     webbrowser.open(url)
     try:

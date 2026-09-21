@@ -1,16 +1,28 @@
 <!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PickKing</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bevan&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 <header class="site-header">
   <div class="container header-inner">
     <span class="brand-mark">Pick<span>King</span></span>
-    <span class="brand-tagline">Prop Edge Scanner</span>
+    <span class="brand-tagline">Prop Edge Ledger</span>
+    <nav class="masthead-links">
+      <a href="/">Home</a>
+      <a href="/logout">Log out</a>
+    </nav>
   </div>
 </header>
+<nav class="container view-nav">
+  <button type="button" class="view-tab active" data-view="scan" onclick="switchView('scan')">Scan &amp; Build</button>
+  <button type="button" class="view-tab" data-view="track" onclick="switchView('track')">Track &amp; Calibrate</button>
+</nav>
 <main class="container">
+
+<div id="view-scan" class="view-panel">
 <div class="header-row">
 <form method="POST" action="/scan" id="scan-form" onsubmit="return handleScanFormSubmit(this)">
   <input type="hidden" name="event_id" id="event-id-input" value="">
@@ -22,10 +34,10 @@
       <label for="sport-select">Sport</label>
       <select name="sport" id="sport-select" onchange="browseGames()">
         <option value="" $sel_none>Select a sport…</option>
-        <option value="basketball_wnba" $sel_wnba>🏀 WNBA</option>
-        <option value="basketball_nba" $sel_nba>🏀 NBA</option>
-        <option value="baseball_mlb" $sel_mlb>⚾ MLB</option>
-        <option value="americanfootball_nfl" $sel_nfl>🏈 NFL</option>
+        <option value="basketball_wnba" $sel_wnba>WNBA</option>
+        <option value="basketball_nba" $sel_nba>NBA</option>
+        <option value="baseball_mlb" $sel_mlb>MLB</option>
+        <option value="americanfootball_nfl" $sel_nfl>NFL</option>
       </select>
     </div>
     <div class="control-group">
@@ -90,21 +102,28 @@ $error_html
 $payload_script
 
 <div class="toolbar">
+  <button type="button" class="clear-btn" onclick="clearAllGames()">Clear all saved games</button>
+</div>
+<div id="tabs-bar" class="tabs-bar"></div>
+<div id="entry-builder-area"></div>
+<div id="manual-leg-area"></div>
+<div id="filter-bar-area"></div>
+<div id="results-area"></div>
+</div>
+
+<div id="view-track" class="view-panel" hidden>
+<div class="toolbar track-toolbar">
   <button type="button" class="browse-btn" onclick="checkResults()">Check results for logged picks</button>
   <span id="check-results-status" class="meta" style="margin:0 0.75rem;"></span>
   <button type="button" class="browse-btn" onclick="checkClv()">Check CLV for logged picks</button>
   <span id="check-clv-status" class="meta" style="margin:0 0.75rem;"></span>
   <button type="button" class="browse-btn" onclick="viewCalibrationReport()">View calibration report</button>
   <button type="button" class="browse-btn" onclick="viewCorrelationReport()">View correlation report</button>
-  <button type="button" class="clear-btn" onclick="clearAllGames()">Clear all saved games</button>
 </div>
 <div id="calibration-report-area"></div>
 <div id="correlation-report-area"></div>
-<div id="tabs-bar" class="tabs-bar"></div>
-<div id="entry-builder-area"></div>
-<div id="manual-leg-area"></div>
-<div id="filter-bar-area"></div>
-<div id="results-area"></div>
+</div>
+
 </main>
 <script src="/static/app.js"></script>
 </body></html>

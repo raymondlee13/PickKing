@@ -1,0 +1,412 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-19T20:35:16Z",
+  "title": "Design System: PickKing",
+  "extensions": {
+    "colorMeta": {
+      "masthead-accent": {
+        "role": "primary",
+        "displayName": "Masthead Accent",
+        "canonical": "#e6603a",
+        "tonalRamp": [
+          "#431609",
+          "#7d2a11",
+          "#b33c19",
+          "#e15228",
+          "#e97d5e",
+          "#f0a994",
+          "#f6cdc0",
+          "#fcede9"
+        ]
+      },
+      "masthead-accent-hover": {
+        "role": "primary",
+        "displayName": "Masthead Accent Hover",
+        "canonical": "#ec7a58",
+        "tonalRamp": [
+          "#451507",
+          "#82280d",
+          "#b93913",
+          "#e84e21",
+          "#ee7a58",
+          "#f4a790",
+          "#f8cbbe",
+          "#fdede8"
+        ]
+      },
+      "accent-ink": {
+        "role": "primary",
+        "displayName": "Accent Ink",
+        "canonical": "#17110b",
+        "tonalRamp": [
+          "#342619",
+          "#61472e",
+          "#8a6642",
+          "#b08559",
+          "#c4a383",
+          "#d7c2ac",
+          "#e8dbcf",
+          "#f7f2ee"
+        ]
+      },
+      "wire-ground": {
+        "role": "neutral",
+        "displayName": "Wire Ground",
+        "canonical": "#1a1816",
+        "tonalRamp": [
+          "#2a2723",
+          "#4e4941",
+          "#6f695d",
+          "#8f887a",
+          "#aba69b",
+          "#c7c4bd",
+          "#dedcd8",
+          "#f3f3f1"
+        ]
+      },
+      "raised-panel": {
+        "role": "neutral",
+        "displayName": "Raised Panel",
+        "canonical": "#211e1a",
+        "tonalRamp": [
+          "#2a2722",
+          "#4f4940",
+          "#70685c",
+          "#918778",
+          "#ada59a",
+          "#c8c3bc",
+          "#dfdcd8",
+          "#f4f3f1"
+        ]
+      },
+      "inset-well": {
+        "role": "neutral",
+        "displayName": "Inset Well",
+        "canonical": "#131110",
+        "tonalRamp": [
+          "#2a2623",
+          "#4e4741",
+          "#6f665d",
+          "#908579",
+          "#aca39b",
+          "#c7c2bc",
+          "#dfdbd8",
+          "#f3f2f1"
+        ]
+      },
+      "agate-ink": {
+        "role": "neutral",
+        "displayName": "Agate Ink",
+        "canonical": "#ddd6c8",
+        "tonalRamp": [
+          "#332c19",
+          "#60512f",
+          "#897443",
+          "#af955a",
+          "#c3b084",
+          "#d7caad",
+          "#e8e0cf",
+          "#f7f4ee"
+        ]
+      },
+      "ink-secondary": {
+        "role": "neutral",
+        "displayName": "Ink Secondary",
+        "canonical": "#b8ad98",
+        "tonalRamp": [
+          "#2d291f",
+          "#544c3a",
+          "#796d53",
+          "#9b8c6e",
+          "#b4a992",
+          "#cdc6b7",
+          "#e2ded5",
+          "#f5f3f0"
+        ]
+      },
+      "ink-muted": {
+        "role": "neutral",
+        "displayName": "Ink Muted",
+        "canonical": "#96896f",
+        "tonalRamp": [
+          "#2b2822",
+          "#504a3f",
+          "#726a5a",
+          "#938a76",
+          "#aea798",
+          "#c9c4ba",
+          "#e0ddd7",
+          "#f4f3f1"
+        ]
+      },
+      "hairline-rule": {
+        "role": "neutral",
+        "displayName": "Hairline Rule",
+        "canonical": "#3a352c",
+        "tonalRamp": [
+          "#2b2821",
+          "#514a3e",
+          "#746a58",
+          "#958974",
+          "#b0a797",
+          "#cac4b9",
+          "#e0ddd6",
+          "#f4f3f0"
+        ]
+      },
+      "hairline-strong": {
+        "role": "neutral",
+        "displayName": "Hairline Strong",
+        "canonical": "#57503f",
+        "tonalRamp": [
+          "#2c2920",
+          "#534c3c",
+          "#766d56",
+          "#988d71",
+          "#b2a995",
+          "#ccc6b8",
+          "#e1ded6",
+          "#f4f3f0"
+        ]
+      },
+      "wire-green": {
+        "role": "secondary",
+        "displayName": "Wire Green (hit/goblin)",
+        "canonical": "#6f9a5d",
+        "tonalRamp": [
+          "#22301d",
+          "#405936",
+          "#5c7f4d",
+          "#78a366",
+          "#9aba8d",
+          "#bcd1b3",
+          "#d8e4d2",
+          "#f1f5ef"
+        ]
+      },
+      "wire-green-well": {
+        "role": "secondary",
+        "displayName": "Wire Green Well",
+        "canonical": "#161c12",
+        "tonalRamp": [
+          "#252f1e",
+          "#445738",
+          "#627c50",
+          "#7f9f6a",
+          "#9fb78f",
+          "#bfcfb4",
+          "#dae3d4",
+          "#f2f5ef"
+        ]
+      },
+      "crimson-flag": {
+        "role": "secondary",
+        "displayName": "Crimson Flag (miss/demon)",
+        "canonical": "#d66080",
+        "tonalRamp": [
+          "#3d101c",
+          "#721d34",
+          "#a22a4a",
+          "#cd3c64",
+          "#d96d8a",
+          "#e69eb1",
+          "#f0c6d2",
+          "#faebef"
+        ]
+      },
+      "crimson-well": {
+        "role": "secondary",
+        "displayName": "Crimson Well",
+        "canonical": "#1f1015",
+        "tonalRamp": [
+          "#321a22",
+          "#5e3140",
+          "#87455b",
+          "#ac5e78",
+          "#c08699",
+          "#d5aebb",
+          "#e7d0d8",
+          "#f6eef1"
+        ]
+      },
+      "brass-warning": {
+        "role": "secondary",
+        "displayName": "Brass Warning (B-tier/estimate)",
+        "canonical": "#b3853f",
+        "tonalRamp": [
+          "#392a14",
+          "#6a4e25",
+          "#977035",
+          "#bf914a",
+          "#cfac77",
+          "#dfc8a4",
+          "#ecdfca",
+          "#f8f4ec"
+        ]
+      },
+      "brass-well": {
+        "role": "secondary",
+        "displayName": "Brass Warning Well",
+        "canonical": "#201a10",
+        "tonalRamp": [
+          "#33291a",
+          "#5f4d30",
+          "#886e44",
+          "#ad8f5c",
+          "#c2ab85",
+          "#d6c7ad",
+          "#e7decf",
+          "#f6f3ee"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Bevan Display",
+        "purpose": "Brand mark only ('Pick'/'King')."
+      },
+      "headline": {
+        "displayName": "Small-Caps Headline",
+        "purpose": "Column headers (Goblins/Regular/Demons) and section labels rendered in genuine small-caps."
+      },
+      "body": {
+        "displayName": "IBM Plex Mono Body",
+        "purpose": "All reading text and every stat/odds/margin value, so number columns align."
+      },
+      "label": {
+        "displayName": "Tracked Label",
+        "purpose": "Field labels, stat labels, dividers -- small-caps, tracked, sized above the 0.75rem accessibility floor."
+      }
+    },
+    "shadows": [],
+    "motion": [
+      {
+        "name": "control-transition",
+        "value": "120ms ease (border/background/color)",
+        "purpose": "Hover/focus state changes on inputs, buttons, and rows."
+      },
+      {
+        "name": "press-transition",
+        "value": "80ms ease transform: translateY(1px)",
+        "purpose": "Button active/press feedback."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "md",
+        "value": "900px"
+      },
+      {
+        "name": "sm",
+        "value": "640px"
+      },
+      {
+        "name": "xs",
+        "value": "480px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Filled-accent primary action; base `button` style inherited by 'Scan whole slate' and 'Log parlay'.",
+      "html": "<button class=\"ds-btn-primary\">Scan whole slate for this date</button>",
+      "css": ".ds-btn-primary { background: #e2572e; color: #17110b; border: 1px solid #e2572e; padding: 0.75rem 1.4rem; font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 0.82rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; cursor: pointer; transition: background 120ms ease, transform 80ms ease; } .ds-btn-primary:hover { background: #ec6b45; border-color: #ec6b45; } .ds-btn-primary:active { transform: translateY(1px); } .ds-btn-primary:focus-visible { outline: 2px solid #e2572e; outline-offset: 2px; }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Secondary toolbar action (browse/check-results/clear).",
+      "html": "<button class=\"ds-btn-ghost\">Check results for logged picks</button>",
+      "css": ".ds-btn-ghost { background: transparent; border: 1px solid #57503f; color: #b3a891; font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 0.78rem; font-weight: 600; letter-spacing: 0.03em; padding: 0.5rem 0.95rem; cursor: pointer; transition: background 120ms ease, color 120ms ease, border-color 120ms ease; } .ds-btn-ghost:hover { background: #0c0b0a; color: #ece6d8; border-color: #e2572e; } .ds-btn-ghost:focus-visible { outline: 2px solid #e2572e; outline-offset: 2px; }"
+    },
+    {
+      "name": "Tier Grade Box (S)",
+      "kind": "custom",
+      "refersTo": "tier-chip-s",
+      "description": "Signature component: tier signal as a bordered stamp, not a colored pill. S-tier variant shown; A/B/C swap border+text color, below/unknown/no-data swap border-style.",
+      "html": "<span class=\"ds-tier-chip ds-tier-s\">S</span>",
+      "css": ".ds-tier-chip { display: inline-block; font-family: Bevan, Georgia, serif; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.02em; padding: 0.12rem 0.5rem; border: 1px solid #57503f; color: #b3a891; text-align: center; min-width: 1.6em; } .ds-tier-s { border-color: #6f9a5d; color: #6f9a5d; background: #161c12; }"
+    },
+    {
+      "name": "Wire-Service Badge",
+      "kind": "custom",
+      "refersTo": null,
+      "description": "Bracketed status tag drawn with CSS-generated content instead of an icon or emoji, e.g. [EST +2pt], [CALIB], [CONFLICT].",
+      "html": "<span class=\"ds-badge ds-badge-est\">EST +2pt</span>",
+      "css": ".ds-badge { display: inline-block; font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 0.76rem; font-weight: 600; letter-spacing: 0.01em; padding: 0.1rem 0.15rem; border: 1px solid currentColor; } .ds-badge::before { content: '['; } .ds-badge::after { content: ']'; } .ds-badge-est { color: #b3853f; }"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": null,
+      "description": "Date/text field: inset well background, hairline-strong border, no radius.",
+      "html": "<input type=\"text\" class=\"ds-input\" placeholder=\"Search legs\" />",
+      "css": ".ds-input { width: 100%; padding: 0.65rem 0.8rem; border: 1px solid #57503f; background: #0c0b0a; color: #ece6d8; font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 0.88rem; transition: border-color 120ms ease; } .ds-input:hover { border-color: #8f8570; } .ds-input:focus-visible { outline: none; border-color: #e2572e; }"
+    },
+    {
+      "name": "Section Tab",
+      "kind": "nav",
+      "refersTo": null,
+      "description": "Entry-builder tab: muted by default, 2px accent underline when active.",
+      "html": "<button class=\"ds-tab ds-tab-active\">Power (4)</button>",
+      "css": ".ds-tab { background: transparent; border: none; border-bottom: 2px solid transparent; padding: 0.55rem 1rem; font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 0.82rem; color: #8f8570; cursor: pointer; margin-bottom: -1px; } .ds-tab-active { border-bottom-color: #e2572e; color: #ece6d8; }"
+    },
+    {
+      "name": "Small-Caps Column Header",
+      "kind": "custom",
+      "refersTo": null,
+      "description": "Results-column header: display face, genuine small-caps on mixed-case text, 3px double rule.",
+      "html": "<div class=\"ds-column-header\">Regular</div>",
+      "css": ".ds-column-header { font-family: Bevan, Georgia, serif; font-weight: 700; font-size: 1.15rem; font-variant: small-caps; letter-spacing: 0.02em; color: #e2572e; margin-bottom: 0.5rem; padding-bottom: 0.5rem; border-bottom: 3px double #57503f; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Press-Room Ledger",
+    "overview": "PickKing reads as a reported agate box score, not a betting-app dashboard. The category default it explicitly refuses is neon/gradient sportsbook chrome, including the product's own prior look (a generic dark-elevated-card dashboard with a gold accent). In its place: a near-black newsprint ground, hairline column rules, a condensed slab-serif for headlines, a monospace numeral face for every stat so figures column up like a stat table, and small-caps tracked labels standing in for section heads. A leg is a line in a ledger; grading is a stamped grade box, not a gamified chip. This is a code-led build: no comp exists, so every value below is read directly from the shipped static/style.css and templates/page.html, not from the original direction contract's aspirations. Two disciplines named in that contract were deliberately not built and are not part of this system: LED-style lit/unlit state dots for 'live vs. stale' data, and a brief live-tile flip on a value that 'just moved.' Both assumed a live-polling/streaming data model; PickKing is a one-shot scan-and-render flow with no such state to indicate, so building either would have invented an affordance for a state that doesn't exist.",
+    "keyCharacteristics": [
+      "Near-black \"wire\" ground with off-white ink and exactly one spot-color accent, used for primary actions and the masthead rule only.",
+      "Flat rectangles everywhere: no radius, no shadow, no gradient (one narrow, functional exception -- see Shapes).",
+      "Genuine small-caps (not uppercase text-transform) on every section label, tracked and tight.",
+      "A condensed slab-serif carries headlines and matchup titles; a monospace face carries every number and every line of body text.",
+      "Tier grade renders as a bordered inset box color-coded by tier, never a tinted card or colored pill."
+    ],
+    "rules": [
+      {
+        "name": "The One Spot-Color Rule",
+        "body": "The masthead accent is the only saturated color used for action and emphasis; status signal (hit/miss/caution) is carried by the separate green/crimson/brass triad, never by the accent.",
+        "section": "colors"
+      },
+      {
+        "name": "The Contrast-Is-Canonical Rule",
+        "body": "--accent, --danger, --warning, and --text-muted were each re-picked mid-build specifically to clear 4.5:1 contrast against --bg. Any future adjustment to these tokens must re-verify against that floor.",
+        "section": "colors"
+      },
+      {
+        "name": "The Genuine Small-Caps Rule",
+        "body": "Section and stat labels use font-variant: small-caps on real mixed-case source text, never text-transform: uppercase.",
+        "section": "typography"
+      },
+      {
+        "name": "The No-Shadow Rule",
+        "body": "Nothing in this system casts a shadow or uses a gradient. Depth comes from the raised/inset tonal pair and rule weight only.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do keep every number in the monospace face (--font) so stat/odds columns stay aligned; never substitute a proportional face for a value column.",
+      "Do use genuine font-variant: small-caps on real mixed-case text for section/stat labels -- not text-transform: uppercase.",
+      "Do render tier as a bordered grade-box keyed to the status triad (wire-green / accent / brass-warning / neutral), never as a filled colored pill or a tinted row background.",
+      "Do keep the masthead's 5px double accent rule and the results columns' 3px double header rule as the system's only two \"heavy rule\" moments -- they read as a print convention specifically because they're rare."
+    ],
+    "donts": [
+      "Don't use emoji, icon fonts, or glyph icon sets anywhere in this system -- the sport <select> previously carried basketball/baseball/football emoji and they were removed as a craft-floor violation; badges draw their own CSS-generated brackets instead.",
+      "Don't add radius, shadow, or gradient to any surface -- the one permitted exception is the circular loading spinner, and it exists only because a spinner must be round.",
+      "Don't invent a live/stale state indicator (lit/unlit dots) or a \"value just changed\" flip animation for this app. Both were raised in the original direction contract and intentionally not built: PickKing's render is a one-shot scan/re-render, not a live data stream.",
+      "Don't give a secondary/outlined treatment to a primary call-to-action button; primary actions always inherit the base filled-accent button style."
+    ]
+  }
+}

@@ -84,6 +84,17 @@ MARKETS_BY_SPORT = {
     "americanfootball_nfl": NFL_MARKETS,
 }
 
+# Human league names for the API's sport keys -- used anywhere a key needs to
+# read as a real word instead of an underscored slug (UI labels, and search
+# queries in ai_context.py, where "basketball_wnba" or a bare team-only query
+# reads to a search engine as much weaker evidence than "WNBA").
+SPORT_LABELS = {
+    "basketball_wnba": "WNBA",
+    "basketball_nba": "NBA",
+    "baseball_mlb": "MLB",
+    "americanfootball_nfl": "NFL",
+}
+
 
 def get_max_gap(market_key):
     return WIDE_MARKETS_MAX_GAP.get(market_key, DEFAULT_MAX_GAP)

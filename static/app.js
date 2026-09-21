@@ -2,6 +2,24 @@ var STORAGE_KEY = 'pp_edge_games';
 var ACTIVE_KEY = 'pp_edge_active';
 var SELECTED_KEY = 'pp_edge_selected';
 var BREAKEVEN_EXPANDED_KEY = 'pp_edge_breakeven_expanded';
+var VIEW_KEY = 'pp_edge_view';
+
+// Two top-level views instead of one long scroll: scanning/building an entry
+// is a different task, done at a different time, than checking results or
+// reading a calibration report against picks logged days ago (see PRODUCT.md
+// -- these are explicitly separate sessions, not concurrent steps). Persists
+// across reloads, including the full-page reload a scan triggers.
+function switchView(view) {
+    var scanPanel = document.getElementById('view-scan');
+    var trackPanel = document.getElementById('view-track');
+    if (!scanPanel || !trackPanel) return;
+    scanPanel.hidden = (view !== 'scan');
+    trackPanel.hidden = (view !== 'track');
+    document.querySelectorAll('.view-tab').forEach(function(btn) {
+        btn.classList.toggle('active', btn.dataset.view === view);
+    });
+    try { localStorage.setItem(VIEW_KEY, view); } catch (e) { /* ignore */ }
+}
 
 // Collapsed by default -- static reference data, not worth permanent screen
 // space (see idea #3). Remembers your preference across reloads.
@@ -482,10 +500,13 @@ function legRowHtml(r, gameKey, gameLabel, rowIdx) {
     }
 
     var secondaryHtml = secondaryBadgesForRow(r);
-    var detailsHtml = secondaryHtml
-        ? ('<button type="button" class="details-toggle" onclick="event.stopPropagation(); toggleLegDetails(' + rowIdx + ')">Details ▾</button>'
-            + '<div id="leg-details-' + rowIdx + '" class="leg-details" style="display:none;">' + secondaryHtml + '</div>')
-        : '';
+    var detailsHtml = '<button type="button" class="details-toggle" onclick="event.stopPropagation(); toggleLegDetails(' + rowIdx + ')">Details ▾</button>'
+        + '<div id="leg-details-' + rowIdx + '" class="leg-details" style="display:none;">'
+        + secondaryHtml
+        + '<button type="button" class="browse-btn" style="margin-top:0.4rem;font-size:var(--fs-xs);padding:0.35rem 0.7rem;" '
+        + 'onclick="event.stopPropagation(); checkLegContext(' + rowIdx + ')">Check context (AI)</button>'
+        + '<div id="context-result-' + rowIdx + '" class="raw-data-panel" style="display:none;margin-top:0.4rem;padding:0.6rem;"></div>'
+        + '</div>';
 
     return '<div class="leg-row ' + css + '" onclick="handleLegRowClick(event, this)">'
         + '<div class="leg-content">'
@@ -502,9 +523,6 @@ function legRowHtml(r, gameKey, gameLabel, rowIdx) {
         + '<div class="meta">' + extraLine + '</div>'
         + detailsHtml
         + '</div>'
-        + '<button type="button" class="browse-btn" style="margin-top:0.4rem;font-size:0.75rem;padding:0.35rem 0.7rem;" '
-        + 'onclick="event.stopPropagation(); checkLegContext(' + rowIdx + ')">Check context (AI)</button>'
-        + '<div id="context-result-' + rowIdx + '" class="raw-data-panel" style="display:none;margin-top:0.4rem;padding:0.6rem;"></div>'
         + '</div>';
 }
 
@@ -520,9 +538,9 @@ function handleLegRowClick(event, cardEl) {
     toggleLeg(checkbox);
 }
 
-// ---- Advisory-only AI research (Gemini + Google Search grounding) --
-// never touches consensus_pct/bar/tier, see ai_context.py for why. Purely
-// human-readable text the user reads and weighs themselves.
+// ---- Advisory-only AI research (Tavily search + Groq) -- never touches
+// consensus_pct/bar/tier, see ai_context.py for why. Purely human-readable
+// text the user reads and weighs themselves.
 function checkLegContext(rowIdx) {
     var gd = currentGameData;
     if (!gd) return;
@@ -532,7 +550,7 @@ function checkLegContext(rowIdx) {
     var resultEl = document.getElementById('context-result-' + rowIdx);
     if (!resultEl) return;
     resultEl.style.display = 'block';
-    resultEl.innerHTML = spinnerHtml('Researching (this calls out to Gemini, may take a few seconds)...');
+    resultEl.innerHTML = spinnerHtml('Researching (searching + writing summary, may take a few seconds)...');
 
     fetch('/check_context', {
         method: 'POST',
@@ -642,7 +660,7 @@ function renderFilterBar() {
     var area = document.getElementById('filter-bar-area');
     var html = '<div class="filter-bar">'
         + '<input type="text" id="player-search" placeholder="Search players or stat type (hits, runs, assists...)" oninput="applySearch()">'
-        + '<label style="display:flex;align-items:center;gap:0.4rem;font-size:0.85rem;color:var(--text-secondary);white-space:nowrap;margin:0;">'
+        + '<label style="display:flex;align-items:center;gap:0.4rem;font-size:var(--fs-sm);color:var(--text-secondary);white-space:nowrap;margin:0;">'
         + 'Profit boost <input type="number" id="profit-boost-input" min="0" step="1" placeholder="0" value="' + (profitBoostPct || '') + '" '
         + 'style="width:70px;margin:0;padding:0.4rem 0.5rem;" oninput="applyBoost()">%'
         + '</label>'
@@ -920,9 +938,9 @@ function renderFilteredColumns() {
     html += gamesLine;
     html += '<div class="meta">' + metaText + '</div>';
     html += '<div class="columns-grid">'
-        + '<div><div class="column-header goblin">GOBLINS</div>' + colHtml(goblins, 'No Goblin legs found.') + '</div>'
-        + '<div><div class="column-header regular">REGULAR</div>' + colHtml(regular, 'No standard legs found.') + '</div>'
-        + '<div><div class="column-header demon">DEMONS</div>' + colHtml(demons, 'No Demon legs found.') + '</div>'
+        + '<div><div class="column-header goblin">Goblins</div>' + colHtml(goblins, 'No Goblin legs found.') + '</div>'
+        + '<div><div class="column-header regular">Regular</div>' + colHtml(regular, 'No standard legs found.') + '</div>'
+        + '<div><div class="column-header demon">Demons</div>' + colHtml(demons, 'No Demon legs found.') + '</div>'
         + '</div>';
     area.innerHTML = html;
 }
@@ -1104,12 +1122,12 @@ function checkEntryCorrelation() {
         return {
             player: d.player, matchup: d.matchup,
             market_label: shortMarketLabel(d.market || ''),
-            side: d.side, point: d.point,
+            side: d.side, point: d.point, sport: d.sport,
         };
     });
 
     resultEl.style.display = 'block';
-    resultEl.innerHTML = spinnerHtml('Checking (this calls out to Gemini, may take a few seconds)...');
+    resultEl.innerHTML = spinnerHtml('Checking (searching + writing summary, may take a few seconds)...');
 
     fetch('/check_correlation', {
         method: 'POST',
@@ -1289,6 +1307,16 @@ function calcEntry() {
             if (chevron) chevron.textContent = '▾';
         }
     } catch (e) { /* ignore */ }
+
+    // A scan is a real form POST (full page reload), and it can only be
+    // triggered from the Scan view, so this naturally stays put across that
+    // reload -- it only matters for an ordinary browser refresh on Track.
+    var savedView = 'scan';
+    try { savedView = localStorage.getItem(VIEW_KEY) || 'scan'; } catch (e) { /* ignore */ }
+    switchView(savedView);
+    // The home page's "Track & Calibrate" link points at /app#track -- an
+    // explicit link click should win over whatever view was last open here.
+    if (location.hash === '#track') switchView('track');
 
     var payloadEl = document.getElementById('scan-payload');
     var games = loadGames();
