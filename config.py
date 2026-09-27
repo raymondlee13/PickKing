@@ -35,3 +35,9 @@ def load_config():
         with open(CONFIG_PATH, "w") as f:
             json.dump(config, f, indent=2)
     return config
+
+
+def propline_key(config):
+    """The PropLine API key, or "" if it's missing or still the placeholder."""
+    key = config.get("api_key", "")
+    return "" if key == "PASTE_YOUR_PROPLINE_KEY_HERE" else key

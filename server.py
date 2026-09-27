@@ -14,10 +14,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from ai_context import check_context, check_correlation
 from auth import (
-    create_session, create_user, destroy_session, parse_session_cookie, username_for_session, verify_user,
+    SESSION_MAX_AGE, create_session, create_user, destroy_session, parse_session_cookie, username_for_session,
+    verify_user,
 )
 from calibration_report import build_report as build_calibration_report
-from config import load_config
+from config import load_config, propline_key
 from correlation_report import build_report as build_correlation_report
 from excel_logging import check_and_fill_clv, check_and_fill_results, log_legs_for_tracking, log_parlay_to_excel
 from goblin_demon_calibration import estimate_multiplier, record_correction
@@ -27,8 +28,6 @@ from scoring import (
     STANDARD_2PICK_LEG_MULTIPLIER, build_report, extract_raw_all_books, grade_leg, grade_manual_leg,
 )
 from views import render_form, render_home, render_login, render_register, rows_to_payload
-
-SESSION_COOKIE_MAX_AGE = 60 * 60 * 24 * 30  # 30 days -- a phone shouldn't need to log back in every visit
 
 PORT = 8787
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -96,11 +95,29 @@ class Handler(BaseHTTPRequestHandler):
             pass
 
     def _session_cookie(self, token):
-        return f"session={token}; HttpOnly; SameSite=Lax; Path=/; Max-Age={SESSION_COOKIE_MAX_AGE}"
+        return f"session={token}; HttpOnly; SameSite=Lax; Path=/; Max-Age={SESSION_MAX_AGE}"
 
     def _current_user(self):
         token = parse_session_cookie(self.headers.get("Cookie", ""))
         return username_for_session(token) if token else None
+
+    def _read_body(self):
+        length = int(self.headers.get("Content-Length", 0))
+        return self.rfile.read(length).decode("utf-8")
+
+    def _read_form(self):
+        return urllib.parse.parse_qs(self._read_body())
+
+    def _read_json(self):
+        """Request body as a dict, or None after already sending a malformed-request reply."""
+        try:
+            data = json.loads(self._read_body())
+        except ValueError:
+            data = None
+        if not isinstance(data, dict):
+            self._send_json({"success": False, "message": "Malformed request."})
+            return None
+        return data
 
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
@@ -144,8 +161,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"games": []})
                 return
             config = load_config()
-            api_key = config.get("api_key", "")
-            if not api_key or api_key == "PASTE_YOUR_PROPLINE_KEY_HERE":
+            api_key = propline_key(config)
+            if not api_key:
                 self._send_json({"error": "No API key set in config.json."}, 400)
                 return
             try:
@@ -211,9 +228,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send_html("<h1>Not found</h1>", 404)
 
     def handle_login(self):
-        length = int(self.headers.get("Content-Length", 0))
-        body = self.rfile.read(length).decode("utf-8")
-        form = urllib.parse.parse_qs(body)
+        form = self._read_form()
         username = form.get("username", [""])[0]
         password = form.get("password", [""])[0]
 
@@ -225,9 +240,7 @@ class Handler(BaseHTTPRequestHandler):
         self._send_redirect("/", set_cookie=self._session_cookie(token))
 
     def handle_register(self):
-        length = int(self.headers.get("Content-Length", 0))
-        body = self.rfile.read(length).decode("utf-8")
-        form = urllib.parse.parse_qs(body)
+        form = self._read_form()
         username = form.get("username", [""])[0]
         password = form.get("password", [""])[0]
         confirm = form.get("confirm", [""])[0]
@@ -245,12 +258,8 @@ class Handler(BaseHTTPRequestHandler):
         self._send_redirect("/", set_cookie=self._session_cookie(token))
 
     def handle_calibrate(self):
-        length = int(self.headers.get("Content-Length", 0))
-        body = self.rfile.read(length).decode("utf-8")
-        try:
-            data = json.loads(body)
-        except Exception:
-            self._send_json({"success": False, "message": "Malformed request."})
+        data = self._read_json()
+        if data is None:
             return
 
         market = data.get("market")
@@ -285,12 +294,8 @@ class Handler(BaseHTTPRequestHandler):
         promo/discount pick -- against real consensus books, the same way any
         scanned leg gets graded. Used for one-off picks that don't show up
         through the normal scan/slate flow."""
-        length = int(self.headers.get("Content-Length", 0))
-        body = self.rfile.read(length).decode("utf-8")
-        try:
-            data = json.loads(body)
-        except Exception:
-            self._send_json({"success": False, "message": "Malformed request."})
+        data = self._read_json()
+        if data is None:
             return
 
         sport = data.get("sport") or ""
@@ -315,8 +320,8 @@ class Handler(BaseHTTPRequestHandler):
             dfs_type = "standard"
 
         config = load_config()
-        api_key = config.get("api_key", "")
-        if not api_key or api_key == "PASTE_YOUR_PROPLINE_KEY_HERE":
+        api_key = propline_key(config)
+        if not api_key:
             self._send_json({"success": False, "message": "No API key set in config.json."})
             return
 
@@ -351,12 +356,8 @@ class Handler(BaseHTTPRequestHandler):
         history, home/away, injury status) via Tavily search + Groq. Never
         touches consensus_pct/bar/tier -- see ai_context.py for why that's a
         deliberate boundary, not an oversight."""
-        length = int(self.headers.get("Content-Length", 0))
-        body = self.rfile.read(length).decode("utf-8")
-        try:
-            data = json.loads(body)
-        except Exception:
-            self._send_json({"success": False, "message": "Malformed request."})
+        data = self._read_json()
+        if data is None:
             return
 
         config = load_config()
@@ -379,12 +380,8 @@ class Handler(BaseHTTPRequestHandler):
         """Advisory-only correlation check across a built entry's legs via
         Tavily search + Groq. Flags relationships in plain language; never
         recalculates the entry's combined probability."""
-        length = int(self.headers.get("Content-Length", 0))
-        body = self.rfile.read(length).decode("utf-8")
-        try:
-            data = json.loads(body)
-        except Exception:
-            self._send_json({"success": False, "message": "Malformed request."})
+        data = self._read_json()
+        if data is None:
             return
 
         config = load_config()
@@ -396,12 +393,8 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json({"success": success, "text": text})
 
     def handle_log_parlay(self):
-        length = int(self.headers.get("Content-Length", 0))
-        body = self.rfile.read(length).decode("utf-8")
-        try:
-            data = json.loads(body)
-        except Exception:
-            self._send_json({"success": False, "message": "Malformed request."})
+        data = self._read_json()
+        if data is None:
             return
 
         legs = data.get("legs", [])
@@ -444,12 +437,8 @@ class Handler(BaseHTTPRequestHandler):
         or multiplier needed, just a record of what the model liked so you
         can fill in W/L later and check whether tiers actually predict hit
         rate."""
-        length = int(self.headers.get("Content-Length", 0))
-        body = self.rfile.read(length).decode("utf-8")
-        try:
-            data = json.loads(body)
-        except Exception:
-            self._send_json({"success": False, "message": "Malformed request."})
+        data = self._read_json()
+        if data is None:
             return
 
         legs = data.get("legs", [])
@@ -470,10 +459,10 @@ class Handler(BaseHTTPRequestHandler):
         alike) against real box scores and fill in W/L for whichever games
         have finished since they were logged."""
         config = load_config()
-        api_key = config.get("api_key", "")
+        api_key = propline_key(config)
         workbook_path = config.get("tracking_workbook_path", "")
 
-        if not api_key or api_key == "PASTE_YOUR_PROPLINE_KEY_HERE":
+        if not api_key:
             self._send_json({"success": False, "message": "No API key set in config.json."})
             return
 
@@ -485,10 +474,10 @@ class Handler(BaseHTTPRequestHandler):
         started -- unlike handle_check_results, doesn't wait for the game to
         finish, since lines lock at kickoff and CLV is knowable right away."""
         config = load_config()
-        api_key = config.get("api_key", "")
+        api_key = propline_key(config)
         workbook_path = config.get("tracking_workbook_path", "")
 
-        if not api_key or api_key == "PASTE_YOUR_PROPLINE_KEY_HERE":
+        if not api_key:
             self._send_json({"success": False, "message": "No API key set in config.json."})
             return
 
@@ -496,18 +485,16 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json({"success": success, "message": message})
 
     def handle_scan(self):
-        length = int(self.headers.get("Content-Length", 0))
-        body = self.rfile.read(length).decode("utf-8")
-        form = urllib.parse.parse_qs(body)
+        form = self._read_form()
         event_id = form.get("event_id", [""])[0]
         team_a = form.get("team_a", [""])[0]
         team_b = form.get("team_b", [""])[0]
         sport = form.get("sport", [""])[0]
 
         config = load_config()
-        api_key = config.get("api_key", "")
+        api_key = propline_key(config)
 
-        if not api_key or api_key == "PASTE_YOUR_PROPLINE_KEY_HERE":
+        if not api_key:
             error_html = ('<div class="error">No API key set. Open config.json in this folder '
                            'and paste your PropLine key in place of PASTE_YOUR_PROPLINE_KEY_HERE, '
                            'then restart the app.</div>')
@@ -554,16 +541,14 @@ class Handler(BaseHTTPRequestHandler):
             self._send_html(render_form(sport, error_html))
 
     def handle_scan_slate(self):
-        length = int(self.headers.get("Content-Length", 0))
-        body = self.rfile.read(length).decode("utf-8")
-        form = urllib.parse.parse_qs(body)
+        form = self._read_form()
         sport = form.get("sport", [""])[0]
         slate_date = form.get("slate_date", [""])[0]
 
         config = load_config()
-        api_key = config.get("api_key", "")
+        api_key = propline_key(config)
 
-        if not api_key or api_key == "PASTE_YOUR_PROPLINE_KEY_HERE":
+        if not api_key:
             error_html = ('<div class="error">No API key set. Open config.json in this folder '
                            'and paste your PropLine key in place of PASTE_YOUR_PROPLINE_KEY_HERE, '
                            'then restart the app.</div>')

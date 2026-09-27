@@ -75,9 +75,9 @@ function renderTabs(games, activeKey) {
     keys.forEach(function(key) {
         var g = games[key];
         var activeClass = (key === activeKey) ? ' active' : '';
-        html += '<div class="tab' + activeClass + '" onclick="switchGame(\'' + key + '\')">'
-            + g.label
-            + ' <span class="tab-close" onclick="event.stopPropagation(); deleteGame(\'' + key + '\')">&times;</span>'
+        html += '<div class="tab' + activeClass + '" data-key="' + escapeAttr(key) + '" onclick="switchGame(this.dataset.key)">'
+            + escapeAttr(g.label)
+            + ' <span class="tab-close" onclick="event.stopPropagation(); deleteGame(this.parentNode.dataset.key)">&times;</span>'
             + '</div>';
     });
     bar.innerHTML = html;
@@ -383,7 +383,7 @@ function correctMultiplier(rowIdx) {
         // so an in-memory-only edit reverts on tab switch.
         var games = loadGames();
         games[currentGameData.gameKey] = currentGameData;
-        saveGames(games);
+        if (!saveGames(games)) alert('Calibration saved, but this tab could not be updated -- browser storage is full. The old value will come back if you switch tabs.');
         renderFilteredColumns();
     })
     .catch(function(err) {
@@ -456,7 +456,7 @@ function legRowHtml(r, gameKey, gameLabel, rowIdx) {
     var checkedAttr = selectedLegs[legId] ? 'checked' : '';
     var disabledAttr = hasData ? '' : 'disabled';
     var sideBadge = '<span class="badge badge-side-' + r.side.toLowerCase() + '">' + r.side.toUpperCase() + '</span>';
-    var matchupLine = r.matchup ? ('<div class="matchup-line">' + r.matchup + '</div>') : '';
+    var matchupLine = r.matchup ? ('<div class="matchup-line">' + escapeAttr(r.matchup) + '</div>') : '';
 
     // Full leg data for spreadsheet logging, base64-encoded to avoid any HTML
     // attribute quote-collision risk (bit us twice already with inline JSON).
@@ -492,7 +492,7 @@ function legRowHtml(r, gameKey, gameLabel, rowIdx) {
         statsHtml = '<div class="leg-stats">'
             + statChip('Line', r.point) + statChip('Consensus', r.consensus_pct + '% ' + r.side)
             + '</div>';
-        extraLine = 'Spread: ' + spread + ' | Books: ' + r.books.join(', ')
+        extraLine = 'Spread: ' + spread + ' | Books: ' + escapeAttr(r.books.join(', '))
             + '<br>Payout multiplier unknown for this market/deviation.';
     } else {
         // Tier itself is shown by the chip in the header now, not repeated here.
@@ -501,7 +501,7 @@ function legRowHtml(r, gameKey, gameLabel, rowIdx) {
             + statChip('Break-even', r.bar + '%')
             + statChip('Margin', (r.margin >= 0 ? '+' : '') + r.margin.toFixed(1) + ' pts')
             + '</div>';
-        extraLine = 'Spread: ' + spread + ' | Books: ' + r.books.join(', ');
+        extraLine = 'Spread: ' + spread + ' | Books: ' + escapeAttr(r.books.join(', '));
     }
 
     var secondaryHtml = secondaryBadgesForRow(r);
@@ -516,10 +516,10 @@ function legRowHtml(r, gameKey, gameLabel, rowIdx) {
     return '<div class="leg-row ' + css + '" onclick="handleLegRowClick(event, this)">'
         + '<div class="leg-content">'
         + '<div class="leg-header">'
-        + '<input type="checkbox" class="leg-check" data-legid="' + legId + '" data-label="' + label
-        + '" data-consensus="' + r.consensus_pct + '" data-gamelabel="' + gameLabel + '" data-logb64="' + logDataB64 + '" '
+        + '<input type="checkbox" class="leg-check" data-legid="' + escapeAttr(legId) + '" data-label="' + escapeAttr(label)
+        + '" data-consensus="' + r.consensus_pct + '" data-gamelabel="' + escapeAttr(gameLabel) + '"data-logb64="' + logDataB64 + '" '
         + checkedAttr + ' ' + disabledAttr + ' onchange="toggleLeg(this)">'
-        + '<span class="leg-title"><strong>' + r.player + '</strong> — ' + shortMarket + sideBadge + '</span>'
+        + '<span class="leg-title"><strong>' + escapeAttr(r.player) + '</strong> — ' + escapeAttr(shortMarket) + sideBadge + '</span>'
         + tierChip(r.tier)
         + '</div>'
         + primaryBadgesForRow(r, rowIdx)
@@ -958,7 +958,8 @@ function loadSelected() {
     catch (e) { return {}; }
 }
 function saveSelected() {
-    localStorage.setItem(SELECTED_KEY, JSON.stringify(selectedLegs));
+    try { localStorage.setItem(SELECTED_KEY, JSON.stringify(selectedLegs)); }
+    catch (e) { alert('Could not save your selected legs -- browser storage is full. Close some old tabs.'); }
 }
 
 function toggleLeg(checkboxEl) {
@@ -1054,7 +1055,7 @@ function renderEntryBuilder() {
     var listHtml = legIds.map(function(legId) {
         var leg = selectedLegs[legId];
         return '<div class="selected-leg" data-legid="' + escapeAttr(legId) + '" onclick="removeLeg(this.dataset.legid)" title="Click to remove">'
-            + '<span>' + leg.label + ' <span class="meta">(' + leg.gameLabel + ')</span></span>'
+            + '<span>' + escapeAttr(leg.label) + ' <span class="meta">(' + escapeAttr(leg.gameLabel) + ')</span></span>'
             + '<span class="tab-close">&times;</span>'
             + '</div>';
     }).join('');

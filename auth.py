@@ -10,17 +10,38 @@ import hashlib
 import json
 import os
 import secrets
+import threading
+import time
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 USERS_PATH = os.path.join(BASE_DIR, "users.json")
+SESSIONS_PATH = os.path.join(BASE_DIR, "sessions.json")
 
 PBKDF2_ITERATIONS = 200_000
 MIN_PASSWORD_LENGTH = 8
+SESSION_MAX_AGE = 60 * 60 * 24 * 30  # 30 days -- a phone shouldn't need to log back in every visit
 
-# token -> username. In-memory only -- resets on server restart, which just
-# means logging in again; acceptable for a personal tool with no other
-# session-durable state server-side.
-_sessions = {}
+
+def _load_sessions():
+    try:
+        with open(SESSIONS_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, ValueError):
+        return {}
+
+
+# token -> [username, expires_at]. Persisted to sessions.json (gitignored) so a
+# server restart doesn't log everyone out; writes go through _sessions_lock
+# since requests run on their own threads.
+_sessions = _load_sessions()
+_sessions_lock = threading.Lock()
+
+
+def _save_sessions():
+    tmp_path = SESSIONS_PATH + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(_sessions, f)
+    os.replace(tmp_path, SESSIONS_PATH)
 
 
 def _load_users():
@@ -71,16 +92,26 @@ def verify_user(username, password):
 
 def create_session(username):
     token = secrets.token_hex(32)
-    _sessions[token] = username
+    now = time.time()
+    with _sessions_lock:
+        for expired in [t for t, (_, exp) in _sessions.items() if exp < now]:
+            del _sessions[expired]
+        _sessions[token] = [username, now + SESSION_MAX_AGE]
+        _save_sessions()
     return token
 
 
 def username_for_session(token):
-    return _sessions.get(token)
+    entry = _sessions.get(token)
+    if entry and entry[1] > time.time():
+        return entry[0]
+    return None
 
 
 def destroy_session(token):
-    _sessions.pop(token, None)
+    with _sessions_lock:
+        if _sessions.pop(token, None):
+            _save_sessions()
 
 
 def parse_session_cookie(cookie_header):

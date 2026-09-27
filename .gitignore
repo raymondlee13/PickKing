@@ -3,6 +3,7 @@ config.json
 
 # Login accounts (salted password hashes, but still personal, not code)
 users.json
+sessions.json
 
 # Your real tracking spreadsheet -- personal data, not code
 PrizePicks_Model_Tracking.xlsx
