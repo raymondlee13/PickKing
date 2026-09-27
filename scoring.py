@@ -449,22 +449,33 @@ def _grade_leg(event, leg, bar):
     # as meaningfully less certain than a real two-way devigged number.
     # ladder itself (not just from_ladder) is also reused below as a
     # last-resort reference-point source for the calibrated bar.
+    #
+    # Tried for EVERY leg type when there's no direct two-way match, not just
+    # goblin/demon/discount -- confirmed on real WNBA data that consensus
+    # books can carry a player/market ONLY as cumulative "X+" threshold
+    # outcomes (no numeric `point` on the Over/Under at all), which
+    # extract_consensus() correctly skips since there's no line to match
+    # against. That left every "standard" PrizePicks leg for those players
+    # silently dropped even though real, market-derived probability data for
+    # them existed in ladder form the whole time. is_one_sided_leg still
+    # governs which SIDE a leg grades on below -- this only widens which
+    # types get to try the ladder as a data source.
     ladder = None
     from_ladder = None
-    if not probs and is_one_sided_leg:
+    if not probs:
         ladder = extract_threshold_ladder(event, leg["player"], leg["market"])
         from_ladder = estimate_probability_from_ladder(ladder, leg["point"])
 
     if not probs and from_ladder is None:
-        if not is_demon_or_goblin_leg:
-            return None  # standard/discount legs need real probability data to grade
-
-        # No consensus book has a safe match at this leg's own point, and
-        # no threshold ladder covers it either -- there's no true hit
-        # probability to compute, so don't fabricate one. Still show the
-        # leg with whatever calibrated multiplier we can find (line_gap
-        # or the consensus books' own reference line) instead of letting
-        # it silently vanish from the results.
+        # No consensus book has a safe match at this leg's own point, and no
+        # threshold ladder covers it either -- there's no true hit
+        # probability to compute for ANY leg type, so don't fabricate one.
+        # Still show the leg with whatever calibrated multiplier we can find
+        # (line_gap or the consensus books' own reference line) instead of
+        # letting it silently vanish from the results -- this used to only
+        # apply to goblin/demon, which just meant a standard/discount leg in
+        # this same no-data situation disappeared instead of showing "NO
+        # DATA" like its goblin/demon siblings did.
         leg_bar, deviation, assumed_multiplier = calibrated_bar_for_leg(event, leg, bar, ladder)
         return {
             "player": leg["player"], "market": leg["market"], "point": leg["point"],

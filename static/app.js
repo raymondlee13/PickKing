@@ -379,6 +379,11 @@ function correctMultiplier(rowIdx) {
         if (data.bar !== undefined) r.bar = data.bar;
         if (data.margin !== undefined) r.margin = data.margin;
         if (data.tier !== undefined) r.tier = data.tier;
+        // Persist to the saved tab too -- switchGame re-reads from storage,
+        // so an in-memory-only edit reverts on tab switch.
+        var games = loadGames();
+        games[currentGameData.gameKey] = currentGameData;
+        saveGames(games);
         renderFilteredColumns();
     })
     .catch(function(err) {

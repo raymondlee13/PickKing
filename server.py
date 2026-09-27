@@ -6,10 +6,11 @@ import html
 import json
 import os
 import socket
+import threading
 import urllib.error
 import urllib.parse
 import webbrowser
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from ai_context import check_context, check_correlation
 from auth import (
@@ -39,6 +40,12 @@ STATIC_FILES = {
     "/static/style.css": ("style.css", "text/css; charset=utf-8"),
     "/static/app.js": ("app.js", "application/javascript; charset=utf-8"),
 }
+
+# Requests run on their own threads (a slow scan shouldn't freeze the app), so
+# handlers that write shared files (users.json, calibration JSON, the Excel
+# workbook) take this lock to keep two writes from interleaving.
+# ponytail: one global lock, per-file locks if check_results starts blocking logging.
+WRITE_LOCK = threading.Lock()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -176,7 +183,8 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_login()
             return
         if self.path == "/register":
-            self.handle_register()
+            with WRITE_LOCK:
+                self.handle_register()
             return
 
         if not self._current_user():
@@ -190,16 +198,9 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_scan()
         elif self.path == "/scan_slate":
             self.handle_scan_slate()
-        elif self.path == "/log_parlay":
-            self.handle_log_parlay()
-        elif self.path == "/log_tracking":
-            self.handle_log_tracking()
-        elif self.path == "/check_results":
-            self.handle_check_results()
-        elif self.path == "/check_clv":
-            self.handle_check_clv()
-        elif self.path == "/calibrate":
-            self.handle_calibrate()
+        elif self.path in ("/log_parlay", "/log_tracking", "/check_results", "/check_clv", "/calibrate"):
+            with WRITE_LOCK:
+                getattr(self, "handle_" + self.path[1:])()
         elif self.path == "/grade_manual":
             self.handle_grade_manual()
         elif self.path == "/check_context":
@@ -647,7 +648,7 @@ def _lan_ip():
 
 def main():
     load_config()  # creates config.json with a placeholder on first run
-    server = HTTPServer(("0.0.0.0", PORT), Handler)  # not "localhost" -- reachable from other devices on the network, gated by login
+    server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)  # not "localhost" -- reachable from other devices on the network, gated by login
     url = f"http://localhost:{PORT}/"
     print(f"PickKing running at {url}")
     lan_ip = _lan_ip()

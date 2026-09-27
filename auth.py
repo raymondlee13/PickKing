@@ -48,6 +48,10 @@ def create_user(username, password):
     if len(password) < MIN_PASSWORD_LENGTH:
         return False, f"Password must be at least {MIN_PASSWORD_LENGTH} characters."
     users = _load_users()
+    # Server listens on the whole LAN -- only the first account can self-register.
+    # Add more by hand-editing users.json (or temporarily moving it aside).
+    if users:
+        return False, "Registration is closed."
     if username in users:
         return False, "That username is already taken."
     salt_hex, digest_hex = _hash_password(password)

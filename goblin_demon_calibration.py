@@ -56,8 +56,11 @@ def _load_calibration():
 def _save_calibration():
     serializable = {market: {dfs_type: [list(p) for p in points] for dfs_type, points in by_type.items()}
                      for market, by_type in CALIBRATION.items()}
-    with open(CALIBRATION_PATH, "w", encoding="utf-8") as f:
+    # Write-then-rename so a crash mid-write can't truncate the hand-built table.
+    tmp_path = CALIBRATION_PATH + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(serializable, f, indent=2)
+    os.replace(tmp_path, CALIBRATION_PATH)
 
 
 # {market_key: {"goblin": [(deviation, observed 2-pick total multiplier), ...], "demon": [...]}}
@@ -113,13 +116,11 @@ def record_correction(market_key, dfs_type, deviation, observed_total_multiplier
     deviation = round(float(deviation), 1)
     observed_total_multiplier = float(observed_total_multiplier)
 
-    table = CALIBRATION.setdefault(market_key, {}).setdefault(dfs_type, [])
-    for i, (d, _m) in enumerate(table):
-        if abs(d - deviation) < 0.05:
-            table[i] = (deviation, observed_total_multiplier)
-            break
-    else:
-        table.append((deviation, observed_total_multiplier))
-    table.sort(key=lambda p: p[0])
+    # Build a new list and swap it in rather than mutating in place -- scans on
+    # other threads read this table concurrently (in-place sort briefly empties it).
+    by_type = CALIBRATION.setdefault(market_key, {})
+    table = [p for p in by_type.get(dfs_type, []) if abs(p[0] - deviation) >= 0.05]
+    table.append((deviation, observed_total_multiplier))
+    by_type[dfs_type] = sorted(table, key=lambda p: p[0])
 
     _save_calibration()
