@@ -2,123 +2,104 @@
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PickKing</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bevan&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&display=swap">
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 <header class="site-header">
   <div class="container header-inner">
     <span class="brand-mark">Pick<span>King</span></span>
-    <span class="brand-tagline">Prop Edge Ledger</span>
+    <nav class="view-nav" aria-label="Views">
+      <button type="button" class="view-tab active" data-view="scan" onclick="switchView('scan')">Scan &amp; Build</button>
+      <button type="button" class="view-tab" data-view="track" onclick="switchView('track')">Track &amp; Calibrate</button>
+    </nav>
     <nav class="masthead-links">
       <a href="/">Home</a>
       <a href="/logout">Log out</a>
     </nav>
   </div>
 </header>
-<nav class="container view-nav">
-  <button type="button" class="view-tab active" data-view="scan" onclick="switchView('scan')">Scan &amp; Build</button>
-  <button type="button" class="view-tab" data-view="track" onclick="switchView('track')">Track &amp; Calibrate</button>
-</nav>
 <main class="container">
 
 <div id="view-scan" class="view-panel">
-<div class="header-row">
-<form method="POST" action="/scan" id="scan-form" onsubmit="return handleScanFormSubmit(this)">
-  <input type="hidden" name="event_id" id="event-id-input" value="">
-  <input type="hidden" name="team_a" id="team-a-input" value="">
-  <input type="hidden" name="team_b" id="team-b-input" value="">
 
-  <div class="scan-controls">
-    <div class="control-group">
-      <label for="sport-select">Sport</label>
-      <select name="sport" id="sport-select" onchange="browseGames()">
-        <option value="" $sel_none>Select a sport…</option>
-        <option value="basketball_wnba" $sel_wnba>WNBA</option>
-        <option value="basketball_nba" $sel_nba>NBA</option>
-        <option value="baseball_mlb" $sel_mlb>MLB</option>
-        <option value="americanfootball_nfl" $sel_nfl>NFL</option>
-      </select>
+<details id="setup" class="setup">
+  <summary class="setup-strip">
+    <span id="setup-current" class="setup-current">Pick a sport and date to scan</span>
+    <span class="setup-action"><span class="when-closed">New scan</span><span class="when-open">Hide</span></span>
+  </summary>
+  <form method="POST" action="/scan" id="scan-form" onsubmit="return handleScanFormSubmit(this)">
+    <input type="hidden" name="event_id" id="event-id-input" value="">
+    <input type="hidden" name="team_a" id="team-a-input" value="">
+    <input type="hidden" name="team_b" id="team-b-input" value="">
+    <input type="hidden" name="commence_time" id="commence-input" value="">
+
+    <div class="scan-controls">
+      <div class="control-group">
+        <label for="sport-select">Sport</label>
+        <select name="sport" id="sport-select" onchange="browseGames()">
+          <option value="" $sel_none>Select a sport…</option>
+          <option value="basketball_wnba" $sel_wnba>WNBA</option>
+          <option value="basketball_nba" $sel_nba>NBA</option>
+          <option value="baseball_mlb" $sel_mlb>MLB</option>
+          <option value="americanfootball_nfl" $sel_nfl>NFL</option>
+        </select>
+      </div>
+      <div class="control-group">
+        <label for="date-input">Date</label>
+        <input type="date" name="slate_date" id="date-input" value="$today" onchange="browseGames()">
+      </div>
+      <div class="control-group control-slate">
+        <button type="submit" formaction="/scan_slate" formnovalidate class="slate-btn">Scan whole slate</button>
+      </div>
     </div>
-    <div class="control-group">
-      <label for="date-input">Date
-        <span class="hint-icon" tabindex="0" title="The games list below shows this date plus the next 2 days. The slate scan button below uses this exact date only.">?</span>
-      </label>
-      <input type="date" name="slate_date" id="date-input" value="$today" onchange="browseGames()">
-    </div>
-  </div>
+    <p class="hint">Games below cover this date and the next 2 days. Click one to scan it, or scan every game on this exact date.</p>
 
-  <div id="game-browser"></div>
-
-  <div class="scan-divider"><span>or</span></div>
-
-  <button type="submit" formaction="/scan_slate" formnovalidate class="slate-btn">Scan whole slate for this date</button>
-  <div id="scan-loading-msg" class="meta" style="display:none;margin-top:0.6rem;"></div>
-</form>
-</div>
-
-<div class="breakeven-chart">
-  <button type="button" class="chart-toggle-btn" onclick="toggleBreakevenChart()">
-    <h2>Break-even reference</h2>
-    <span id="breakeven-chevron" class="chevron">▸</span>
-  </button>
-  <div id="breakeven-chart-body" style="display:none;">
-
-  <div class="section-label">Power Play (per-leg break-even)</div>
-  <table>
-    <tr><th>Picks</th><th>Multiplier</th><th>Break-even/leg</th></tr>
-    <tr><td>2</td><td>3x</td><td>57.7%</td></tr>
-    <tr><td>3</td><td>6x</td><td>55.0%</td></tr>
-    <tr><td>4</td><td>10x</td><td>56.2%</td></tr>
-    <tr><td>5</td><td>20x</td><td>54.9%</td></tr>
-    <tr><td>6</td><td>37.5x</td><td>54.7%</td></tr>
-  </table>
-
-  <div class="section-label">Flex Play (payout tiers, per leg -- assumes equal probability across legs)</div>
-  <table>
-    <tr><th>Picks</th><th>All hit</th><th>1 miss</th><th>2 miss</th><th>Break-even/leg</th><th>Am. odds</th></tr>
-    <tr><td>2</td><td colspan="4">Not offered -- Flex requires 3+ picks</td></tr>
-    <tr><td>3</td><td>3x</td><td>1x</td><td>--</td><td>57.7%</td><td>-137</td></tr>
-    <tr><td>4</td><td>6x</td><td>1.5x</td><td>--</td><td>55.0%</td><td>-122</td></tr>
-    <tr><td>5</td><td>10x</td><td>2x</td><td>0.4x</td><td>54.3%</td><td>-119</td></tr>
-    <tr><td>6</td><td>25x</td><td>2x</td><td>0.4x</td><td>54.2%</td><td>-118</td></tr>
-  </table>
-
-  <div class="footnote">
-    Power Play numbers verified two ways: cross-checked against your own established break-even
-    figures and against current multiplier reports. Flex 3-pick payout tiers (3x/1x) confirmed
-    directly from the app. The Flex break-even/leg column is solved from the real expected-value
-    math across all payout tiers (not just the top one) -- it assumes every leg in the entry has
-    the same true win probability, which is a simplification, not how a mixed-confidence real
-    entry actually works. The 4-pick Flex top payout was corrected to 6x (not 5x) after this math
-    didn't reconcile at 5x -- 6x is what makes the numbers check out. All multipliers can change or
-    vary by lineup (same-game combos, promos) -- always confirm the number shown in the app before
-    submitting.
-  </div>
-  </div>
-</div>
+    <div id="game-browser"></div>
+    <div id="scan-loading-msg" class="meta" hidden></div>
+    <div class="setup-foot"><button type="button" class="clear-btn" onclick="clearAllGames()">Clear all saved games</button></div>
+  </form>
+</details>
 
 $error_html
 $payload_script
 
-<div class="toolbar">
-  <button type="button" class="clear-btn" onclick="clearAllGames()">Clear all saved games</button>
+<div class="tabs-row" hidden>
+  <div id="tabs-bar" class="tabs-bar"></div>
 </div>
-<div id="tabs-bar" class="tabs-bar"></div>
-<div id="entry-builder-area"></div>
-<div id="manual-leg-area"></div>
-<div id="filter-bar-area"></div>
-<div id="results-area"></div>
+
+<div class="board-layout">
+  <div class="board-main">
+    <div id="filter-bar-area"></div>
+    <div id="manual-leg-area"></div>
+    <div id="results-area"></div>
+  </div>
+  <aside id="entry-builder-area" class="ticket-area" aria-label="Entry ticket" onclick="if (event.target === this && ticketOpen) toggleTicket()"></aside>
+</div>
 </div>
 
 <div id="view-track" class="view-panel" hidden>
 <div class="toolbar track-toolbar">
-  <button type="button" class="browse-btn" onclick="checkResults()">Check results for logged picks</button>
-  <span id="check-results-status" class="meta" style="margin:0 0.75rem;"></span>
-  <button type="button" class="browse-btn" onclick="checkClv()">Check CLV for logged picks</button>
-  <span id="check-clv-status" class="meta" style="margin:0 0.75rem;"></span>
-  <button type="button" class="browse-btn" onclick="viewCalibrationReport()">View calibration report</button>
-  <button type="button" class="browse-btn" onclick="viewCorrelationReport()">View correlation report</button>
+  <div class="track-action">
+    <button type="button" onclick="checkResults()">Check results for logged picks</button>
+    <div id="check-results-status" class="meta"></div>
+  </div>
+  <div class="track-action">
+    <button type="button" class="browse-btn" onclick="checkClv()">Check CLV for logged picks</button>
+    <div id="check-clv-status" class="meta"></div>
+  </div>
+  <div class="track-action">
+    <button type="button" class="browse-btn" onclick="viewCalibrationReport()">Calibration report</button>
+  </div>
+  <div class="track-action">
+    <button type="button" class="browse-btn" onclick="viewCorrelationReport()">Correlation report</button>
+  </div>
+</div>
+<div class="track-guide">
+  <p><strong>Check results</strong> fills in W/L for every logged pick whose game has finished.</p>
+  <p><strong>Check CLV</strong> compares each logged line to the closing line once its game has started.</p>
+  <p><strong>Calibration report</strong> shows whether each grade's real hit rate matches what it predicted.</p>
+  <p><strong>Correlation report</strong> shows how often same-game legs hit or missed together.</p>
 </div>
 <div id="calibration-report-area"></div>
 <div id="correlation-report-area"></div>

@@ -7,6 +7,7 @@ import json
 import os
 import socket
 import threading
+import unicodedata
 import urllib.error
 import urllib.parse
 import webbrowser
@@ -25,7 +26,8 @@ from goblin_demon_calibration import estimate_multiplier, record_correction
 from propline_api import fetch_props, list_upcoming_events, scan_slate, utc_to_local_date_str
 from scoring import (
     BASKETBALL_MARKETS, DEFAULT_BAR, MARKETS_BY_SPORT, SPORT_LABELS,
-    STANDARD_2PICK_LEG_MULTIPLIER, build_report, extract_raw_all_books, grade_leg, grade_manual_leg,
+    STANDARD_2PICK_LEG_MULTIPLIER, build_report, extract_raw_all_books, find_consensus_reference_point, grade_leg,
+    grade_manual_leg,
 )
 from views import render_form, render_home, render_login, render_register, rows_to_payload
 
@@ -337,13 +339,21 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"success": False, "message": f"{type(e).__name__}: {e}"})
             return
 
+        player = _feed_spelling(full_event, player)
         row = grade_manual_leg(full_event, player, market, point, dfs_type, DEFAULT_BAR)
-        if row is None:
-            self._send_json({"success": False, "message": (
-                "No sportsbook has a usable line for this player/market close enough to grade. "
-                "Check the player name matches the sportsbook feed exactly, and that the market "
-                "key is right (e.g. player_reception_yds)."
-            )})
+        # _grade_leg never returns None any more -- an ungradeable leg comes back
+        # as a NO DATA row. Don't add one of those silently: say why, and tell a
+        # name mismatch (books have nothing for this player) apart from a line
+        # the books just don't reach (they list the player at a different line).
+        if row is None or row.get("consensus_pct") is None:
+            book_line = find_consensus_reference_point(full_event, player, market)
+            if book_line is None:
+                message = (f"No sportsbook lists {player} for this stat in this game. Check the name matches "
+                           "the sportsbook spelling exactly (e.g. accents, Jr.), and that it's the right game.")
+            else:
+                message = (f"Books have {player} at {book_line:g}, but nothing at {point:g}, and no alt-line "
+                           "ladder covers it, so there's no real probability to grade this line against.")
+            self._send_json({"success": False, "message": message})
             return
 
         row["manual"] = True
@@ -490,6 +500,7 @@ class Handler(BaseHTTPRequestHandler):
         team_a = form.get("team_a", [""])[0]
         team_b = form.get("team_b", [""])[0]
         sport = form.get("sport", [""])[0]
+        commence_time = form.get("commence_time", [""])[0]
 
         config = load_config()
         api_key = propline_key(config)
@@ -531,6 +542,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
 
             payload = rows_to_payload(rows, bar, event_id, team_a, team_b, sport, raw_books, markets)
+            payload["commence"] = commence_time
             self._send_html(render_form(sport, scan_payload=payload))
 
         except urllib.error.HTTPError as e:
@@ -615,6 +627,26 @@ class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, format, *args):
         pass  # keep the console quiet
+
+
+def _name_key(name):
+    """Name compared loosely: no accents, case, punctuation or spacing."""
+    plain = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
+    return "".join(ch for ch in plain.lower() if ch.isalnum())
+
+
+def _feed_spelling(event, typed):
+    """The sportsbook feed's own spelling of a hand-typed player name
+    ("aja wilson" -> "A'ja Wilson"), since grading matches names exactly.
+    Returns the typed name unchanged when nothing in the feed matches."""
+    key = _name_key(typed)
+    for book in event.get("bookmakers", []):
+        for market in book.get("markets", []):
+            for outcome in market.get("outcomes", []):
+                name = outcome.get("description")
+                if name and _name_key(name) == key:
+                    return name
+    return typed
 
 
 def _lan_ip():

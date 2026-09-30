@@ -1,7 +1,6 @@
 var STORAGE_KEY = 'pp_edge_games';
 var ACTIVE_KEY = 'pp_edge_active';
 var SELECTED_KEY = 'pp_edge_selected';
-var BREAKEVEN_EXPANDED_KEY = 'pp_edge_breakeven_expanded';
 var VIEW_KEY = 'pp_edge_view';
 
 // Two top-level views instead of one long scroll: scanning/building an entry
@@ -21,18 +20,6 @@ function switchView(view) {
     try { localStorage.setItem(VIEW_KEY, view); } catch (e) { /* ignore */ }
 }
 
-// Collapsed by default -- static reference data, not worth permanent screen
-// space (see idea #3). Remembers your preference across reloads.
-function toggleBreakevenChart() {
-    var body = document.getElementById('breakeven-chart-body');
-    var chevron = document.getElementById('breakeven-chevron');
-    if (!body || !chevron) return;
-    var expand = body.style.display === 'none';
-    body.style.display = expand ? 'block' : 'none';
-    chevron.textContent = expand ? '▾' : '▸';
-    try { localStorage.setItem(BREAKEVEN_EXPANDED_KEY, expand ? '1' : '0'); } catch (e) { /* ignore */ }
-}
-
 function spinnerHtml(text) {
     return '<span class="loading-msg"><span class="spinner"></span>' + text + '</span>';
 }
@@ -46,8 +33,8 @@ function spinnerHtml(text) {
 function handleScanFormSubmit(form) {
     var msgEl = document.getElementById('scan-loading-msg');
     if (msgEl) {
-        msgEl.style.display = 'block';
-        msgEl.innerHTML = spinnerHtml('Scanning -- this can take several seconds for a game with a lot of books/props posted...');
+        msgEl.hidden = false;
+        msgEl.innerHTML = spinnerHtml('Scanning. This can take several seconds for a game with lots of books and props posted...');
     }
     var buttons = form.querySelectorAll('button[type="submit"]');
     for (var i = 0; i < buttons.length; i++) buttons[i].disabled = true;
@@ -67,9 +54,16 @@ function saveGames(games) {
     }
 }
 
+var CLOSE_ICON = '<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M1 1l8 8M9 1l-8 8" stroke="currentColor" stroke-width="1.6" fill="none"/></svg>';
+
 function renderTabs(games, activeKey) {
     var bar = document.getElementById('tabs-bar');
     var keys = Object.keys(games);
+    // One game is already named by the setup strip -- tabs only earn a row
+    // once there's something to switch between.
+    bar.parentNode.hidden = keys.length < 2;
+    var clearFoot = document.querySelector('.setup-foot');
+    if (clearFoot) clearFoot.hidden = keys.length === 0;
     if (keys.length === 0) { bar.innerHTML = ''; return; }
     var html = '';
     keys.forEach(function(key) {
@@ -77,7 +71,7 @@ function renderTabs(games, activeKey) {
         var activeClass = (key === activeKey) ? ' active' : '';
         html += '<div class="tab' + activeClass + '" data-key="' + escapeAttr(key) + '" onclick="switchGame(this.dataset.key)">'
             + escapeAttr(g.label)
-            + ' <span class="tab-close" onclick="event.stopPropagation(); deleteGame(this.parentNode.dataset.key)">&times;</span>'
+            + '<span class="tab-close" role="button" aria-label="Close tab" onclick="event.stopPropagation(); deleteGame(this.parentNode.dataset.key)">' + CLOSE_ICON + '</span>'
             + '</div>';
     });
     bar.innerHTML = html;
@@ -145,7 +139,7 @@ function browseGames() {
                 html += '<div class="game-day-header">' + dayKey + '</div>';
                 dayGames[dayKey].forEach(function(entry) {
                     var g = entry.g;
-                    html += '<div class="game-item" data-id="' + escapeAttr(g.id) + '" data-away="' + escapeAttr(g.away_team) + '" data-home="' + escapeAttr(g.home_team) + '" onclick="pickGame(this.dataset.id, this.dataset.away, this.dataset.home)">'
+                    html += '<div class="game-item" data-id="' + escapeAttr(g.id) + '" data-away="' + escapeAttr(g.away_team) + '" data-home="' + escapeAttr(g.home_team) + '" data-time="' + escapeAttr(g.commence_time || '') + '" onclick="pickGame(this.dataset.id, this.dataset.away, this.dataset.home, this.dataset.time)">'
                         + '<span class="game-teams">' + escapeAttr(g.away_team) + ' <span class="game-at">@</span> ' + escapeAttr(g.home_team) + '</span>'
                         + (entry.timeStr ? '<span class="game-time">' + escapeAttr(entry.timeStr) + '</span>' : '')
                         + '</div>';
@@ -159,8 +153,9 @@ function browseGames() {
         });
 }
 
-function pickGame(eventId, teamA, teamB) {
+function pickGame(eventId, teamA, teamB, commence) {
     document.getElementById('event-id-input').value = eventId;
+    document.getElementById('commence-input').value = commence || '';
     document.getElementById('team-a-input').value = teamA;
     document.getElementById('team-b-input').value = teamB;
     var form = document.getElementById('scan-form');
@@ -238,7 +233,7 @@ function viewCalibrationReport() {
             }
 
             html += '<div class="section-label" style="margin-top:0.8rem;">Goblin/Demon calibration curve (by predicted probability, not Tier)</div>';
-            html += '<div class="meta">Bar varies per leg for these, so Tier isn\'t comparable across them -- '
+            html += '<div class="meta">Bar varies per leg for these, so Tier isn\'t comparable across them. '
                 + 'checking predicted probability vs. actual hit rate instead. A well-calibrated model has '
                 + 'these two columns roughly matching in every row.</div>';
             if (d.variable_bar_calibration.length === 0) {
@@ -283,7 +278,7 @@ function viewCorrelationReport() {
             html += '<div class="meta">' + d.total_legs + ' graded leg(s) overall | your overall hit rate: ' + d.overall_hit_rate + '%</div>';
 
             if (!d.summary) {
-                html += '<div class="game-list-msg" style="margin-top:0.6rem;">No same-game leg pairs yet -- '
+                html += '<div class="game-list-msg" style="margin-top:0.6rem;">No same-game leg pairs yet. '
                     + 'this needs at least 2 graded legs from the same date + matchup to compare. Keep logging and checking results.</div>';
             } else {
                 var s = d.summary;
@@ -293,7 +288,7 @@ function viewCorrelationReport() {
                     + 'Rough independence baseline (your overall hit rate squared): ' + s.expected_both_hit_pct_if_independent + '% both-hit. '
                     + 'If your real "both hit" % is well above that, same-game legs may be moving together more than independent math assumes.</div>';
                 if (s.total_pairs < 15) {
-                    html += '<div class="meta" style="color:var(--warning);">Only ' + s.total_pairs + ' pair(s) so far -- '
+                    html += '<div class="meta" style="color:var(--accent);">Only ' + s.total_pairs + ' pair(s) so far, '
                         + 'too few to draw a real conclusion from yet. This becomes more meaningful as it accumulates.</div>';
                 }
 
@@ -322,7 +317,10 @@ function clearAllGames() {
     localStorage.removeItem(SELECTED_KEY);
     selectedLegs = {};
     renderTabs({}, null);
-    document.getElementById('results-area').innerHTML = '';
+    currentGameData = null;
+    renderFilteredColumns();
+    renderManualLegForm();
+    renderSetupStrip();
     renderEntryBuilder();
 }
 
@@ -340,7 +338,7 @@ function deleteGame(key) {
     else localStorage.removeItem(ACTIVE_KEY);
     renderTabs(games, newActive);
     if (newActive) renderColumns(games[newActive]);
-    else document.getElementById('results-area').innerHTML = '';
+    else { currentGameData = null; renderFilteredColumns(); renderManualLegForm(); renderSetupStrip(); }
     renderEntryBuilder();
 }
 
@@ -383,7 +381,7 @@ function correctMultiplier(rowIdx) {
         // so an in-memory-only edit reverts on tab switch.
         var games = loadGames();
         games[currentGameData.gameKey] = currentGameData;
-        if (!saveGames(games)) alert('Calibration saved, but this tab could not be updated -- browser storage is full. The old value will come back if you switch tabs.');
+        if (!saveGames(games)) alert('Calibration saved, but this tab could not be updated because browser storage is full. The old value will come back if you switch tabs.');
         renderFilteredColumns();
     })
     .catch(function(err) {
@@ -391,17 +389,8 @@ function correctMultiplier(rowIdx) {
     });
 }
 
-// One prominent chip communicates tier at a glance instead of burying it in
-// a sentence of meta text -- the single most important signal on the card
-// (S/A picks get a tinted card background too, see the tierS/tierA CSS).
-var TIER_CHIP_LABEL = { 'TIER S': 'S', 'TIER A': 'A', 'TIER B': 'B', 'TIER C': 'C', 'BELOW BAR': 'BELOW BAR', 'UNKNOWN': '?', 'NO DATA': '--' };
+// Tier -> the band class the big board colors by.
 var TIER_CHIP_CLASS = { 'TIER S': 'chip-S', 'TIER A': 'chip-A', 'TIER B': 'chip-B', 'TIER C': 'chip-C', 'BELOW BAR': 'chip-below', 'UNKNOWN': 'chip-unknown', 'NO DATA': 'chip-nodata' };
-
-function tierChip(tier) {
-    var cls = TIER_CHIP_CLASS[tier] || 'chip-below';
-    var label = TIER_CHIP_LABEL[tier] || tier;
-    return '<span class="tier-chip ' + cls + '">' + label + '</span>';
-}
 
 function statChip(label, value) {
     return '<div class="stat"><span class="stat-label">' + label + '</span><span class="stat-value">' + value + '</span></div>';
@@ -413,29 +402,29 @@ function statChip(label, value) {
 // card made a leg with several caveats wrap across multiple lines).
 function primaryBadgesForRow(r, rowIdx) {
     var b = '';
-    if (r.manual) b += '<span class="badge badge-calib">MANUAL</span>';
-    if (r.dfs_type === 'discount') b += '<span class="badge badge-single">DISCOUNT -- standard payout</span>';
-    if (r.type_conflict) b += '<span class="badge badge-conflict">VERIFY TYPE IN APP</span>';
+    if (r.manual) b += '<span class="badge badge-calib">Manual</span>';
+    if (r.dfs_type === 'discount') b += '<span class="badge badge-single">Discount · standard payout</span>';
+    if (r.type_conflict) b += '<span class="badge badge-conflict">Verify type in app</span>';
     // Kept visible, not tucked behind Details -- this is the assumed payout
     // multiplier driving the leg's whole grade (or a flag that it's missing),
     // and the "fix" action to correct it, so it shouldn't need an extra click.
     if (r.deviation !== null && r.deviation !== undefined) {
-        var label = r.assumed_multiplier ? ('~' + r.assumed_multiplier + 'x ASSUMED') : 'MULTIPLIER UNKNOWN';
+        var label = r.assumed_multiplier ? ('Assumed ' + r.assumed_multiplier + 'x') : 'Multiplier unknown';
         b += '<span class="badge badge-calib">' + label
-            + ' <a href="javascript:void(0)" class="badge-fix" onclick="event.stopPropagation(); event.preventDefault(); correctMultiplier(' + rowIdx + ')">fix</a></span>';
+            + ' <a href="javascript:void(0)" class="badge-fix" onclick="event.stopPropagation(); event.preventDefault(); correctMultiplier(' + rowIdx + ')">Fix</a></span>';
     }
     return b;
 }
 
 function secondaryBadgesForRow(r) {
     var b = '';
-    if (r._boosted) b += '<span class="badge badge-calib">' + profitBoostPct + '% BOOST APPLIED</span>';
+    if (r._boosted) b += '<span class="badge badge-calib">' + profitBoostPct + '% boost applied</span>';
     if (r.estimate_type === 'THRESHOLD_LADDER') {
-        b += '<span class="badge badge-est">LADDER EST -- single-book, no de-vig</span>';
+        b += '<span class="badge badge-est">Ladder estimate · single book, no de-vig</span>';
     } else if (r.estimated) {
         b += '<span class="badge badge-est">EST +' + r.gap + 'pt</span>';
     }
-    if (r.single_book) b += '<span class="badge badge-single">SINGLE BOOK</span>';
+    if (r.single_book) b += '<span class="badge badge-single">Single book</span>';
     return b;
 }
 
@@ -445,18 +434,27 @@ function toggleLegDetails(rowIdx) {
     el.style.display = (el.style.display === 'none') ? 'block' : 'none';
 }
 
-function legRowHtml(r, gameKey, gameLabel, rowIdx) {
+// Display names for sportsbook keys in the feed.
+var BOOK_NAMES = {
+    draftkings: 'DraftKings', fanduel: 'FanDuel', betmgm: 'BetMGM', caesars: 'Caesars', betrivers: 'BetRivers',
+    pinnacle: 'Pinnacle', bovada: 'Bovada', unibet: 'Unibet', prizepicks: 'PrizePicks', underdog: 'Underdog',
+    sleeper: 'Sleeper', dabble: 'Dabble',
+};
+function bookName(key) { return BOOK_NAMES[key] || key; }
+
+var TYPE_WORD = { goblin: 'Goblin', demon: 'Demon', discount: 'Promo' };
+
+// One leg as a single dense strip on the big board: pick box, name, the
+// prop (side + line + market), consensus, margin. Everything secondary sits
+// on the line under it or behind Details.
+function legStripHtml(r, gameKey, gameLabel, rowIdx) {
     var hasData = r.consensus_pct !== null && r.consensus_pct !== undefined;
-    var TIER_CSS = { 'TIER S': 'tierS', 'TIER A': 'tierA', 'TIER B': 'tierB', 'TIER C': 'tierC', 'UNKNOWN': 'tierUnknown' };
-    var css = !hasData ? 'noData' : (TIER_CSS[r.tier] || 'below');
-    var spread = r.single_book ? 'N/A - SINGLE BOOK' : (r.spread_pct != null ? r.spread_pct + 'pts' : 'N/A');
+    var hasMargin = hasData && r.margin !== null && r.margin !== undefined;
     var shortMarket = shortMarketLabel(r.market);
     var label = r.player + ' - ' + r.side + ' ' + shortMarket + ' ' + r.point;
     var legId = gameKey + '::' + r.player + '::' + r.market + '::' + r.point;
-    var checkedAttr = selectedLegs[legId] ? 'checked' : '';
-    var disabledAttr = hasData ? '' : 'disabled';
-    var sideBadge = '<span class="badge badge-side-' + r.side.toLowerCase() + '">' + r.side.toUpperCase() + '</span>';
-    var matchupLine = r.matchup ? ('<div class="matchup-line">' + escapeAttr(r.matchup) + '</div>') : '';
+    var picked = !!selectedLegs[legId];
+    var spread = r.single_book ? 'n/a (single book)' : (r.spread_pct != null ? r.spread_pct + ' pts' : 'n/a');
 
     // Full leg data for spreadsheet logging, base64-encoded to avoid any HTML
     // attribute quote-collision risk (bit us twice already with inline JSON).
@@ -475,58 +473,39 @@ function legRowHtml(r, gameKey, gameLabel, rowIdx) {
     };
     var logDataB64 = btoa(unescape(encodeURIComponent(JSON.stringify(logData))));
 
-    // Key numbers as compact stat chips instead of a prose sentence -- much
-    // faster to scan across dozens of cards than reading "Line: X | Consensus:
-    // Y% Z (spread W, books: ...) -- Break-even: A% | Edge margin: +B pts" every
-    // single time. Secondary detail (spread/books) stays as small text below.
-    var statsHtml, extraLine;
+    var note = '';
     if (!hasData) {
-        statsHtml = '<div class="leg-stats">' + statChip('Line', r.point) + '</div>';
-        extraLine = 'No consensus book has a safe line to compare against -- can\'t compute a real edge for this one.'
+        note = 'No consensus book has a safe line to compare against, so there\'s no real edge to compute for this one.'
             + (r.assumed_multiplier ? ' Assumed break-even: ' + r.bar + '%.' : '');
-    } else if (r.margin === null || r.margin === undefined) {
+    } else if (!hasMargin) {
         // Goblin/demon leg with no calibration data for this market/deviation yet --
-        // true probability is real (shown below), but grading it against a payout
-        // we don't actually know would be a fabricated tier, so none is assigned
-        // (the "?" chip communicates that -- no need to repeat it in prose here).
-        statsHtml = '<div class="leg-stats">'
-            + statChip('Line', r.point) + statChip('Consensus', r.consensus_pct + '% ' + r.side)
-            + '</div>';
-        extraLine = 'Spread: ' + spread + ' | Books: ' + escapeAttr(r.books.join(', '))
-            + '<br>Payout multiplier unknown for this market/deviation.';
-    } else {
-        // Tier itself is shown by the chip in the header now, not repeated here.
-        statsHtml = '<div class="leg-stats">'
-            + statChip('Line', r.point) + statChip('Consensus', r.consensus_pct + '% ' + r.side)
-            + statChip('Break-even', r.bar + '%')
-            + statChip('Margin', (r.margin >= 0 ? '+' : '') + r.margin.toFixed(1) + ' pts')
-            + '</div>';
-        extraLine = 'Spread: ' + spread + ' | Books: ' + escapeAttr(r.books.join(', '));
+        // true probability is real, but grading it against a payout we don't
+        // actually know would be a fabricated tier, so none is assigned.
+        note = 'Payout multiplier unknown for this market/deviation.';
     }
+    var typeWord = TYPE_WORD[r.dfs_type];
 
-    var secondaryHtml = secondaryBadgesForRow(r);
-    var detailsHtml = '<button type="button" class="details-toggle" onclick="event.stopPropagation(); toggleLegDetails(' + rowIdx + ')">Details ▾</button>'
-        + '<div id="leg-details-' + rowIdx + '" class="leg-details" style="display:none;">'
-        + secondaryHtml
-        + '<button type="button" class="browse-btn" style="margin-top:0.4rem;font-size:var(--fs-xs);padding:0.35rem 0.7rem;" '
-        + 'onclick="event.stopPropagation(); checkLegContext(' + rowIdx + ')">Check context (AI)</button>'
-        + '<div id="context-result-' + rowIdx + '" class="raw-data-panel" style="display:none;margin-top:0.4rem;padding:0.6rem;"></div>'
-        + '</div>';
-
-    return '<div class="leg-row ' + css + '" onclick="handleLegRowClick(event, this)">'
-        + '<div class="leg-content">'
-        + '<div class="leg-header">'
-        + '<input type="checkbox" class="leg-check" data-legid="' + escapeAttr(legId) + '" data-label="' + escapeAttr(label)
-        + '" data-consensus="' + r.consensus_pct + '" data-gamelabel="' + escapeAttr(gameLabel) + '"data-logb64="' + logDataB64 + '" '
-        + checkedAttr + ' ' + disabledAttr + ' onchange="toggleLeg(this)">'
-        + '<span class="leg-title"><strong>' + escapeAttr(r.player) + '</strong> — ' + escapeAttr(shortMarket) + sideBadge + '</span>'
-        + tierChip(r.tier)
+    return '<div class="leg bb-strip' + (picked ? ' picked' : '') + (hasData ? '' : ' noData') + '" onclick="handleLegRowClick(event, this)">'
+        + '<div class="bb-main">'
+        + '<input type="checkbox" class="leg-check" aria-label="Add ' + escapeAttr(label) + ' to ticket" data-legid="' + escapeAttr(legId)
+        + '" data-label="' + escapeAttr(label) + '" data-consensus="' + r.consensus_pct + '" data-gamelabel="' + escapeAttr(gameLabel)
+        + '" data-logb64="' + logDataB64 + '" ' + (picked ? 'checked' : '') + ' ' + (hasData ? '' : 'disabled') + ' onchange="toggleLeg(this)">'
+        + '<span class="bb-player">' + escapeAttr(r.player) + '</span>'
+        + '<span class="bb-prop"><b class="' + (r.side === 'More' ? 'side-more' : 'side-less') + '">' + escapeAttr(r.side) + '</b> '
+        + '<strong>' + r.point + '</strong> ' + escapeAttr(shortMarket) + (typeWord ? ' <em>' + typeWord + '</em>' : '') + '</span>'
+        + '<span class="bb-num" title="Consensus probability">' + (hasData ? r.consensus_pct + '<small>%</small>' : '--') + '</span>'
+        + '<span class="bb-num bb-margin" title="Margin over break-even">' + (hasMargin ? (r.margin >= 0 ? '+' : '') + r.margin.toFixed(1) : '') + '</span>'
+        + '<button type="button" class="details-toggle" onclick="event.stopPropagation(); toggleLegDetails(' + rowIdx + ')">Details</button>'
         + '</div>'
-        + primaryBadgesForRow(r, rowIdx)
-        + matchupLine
-        + statsHtml
-        + '<div class="meta">' + extraLine + '</div>'
-        + detailsHtml
+        + '<div class="bb-sub">' + (r.matchup ? '<span>' + escapeAttr(r.matchup) + '</span>' : '') + primaryBadgesForRow(r, rowIdx) + '</div>'
+        + '<div id="leg-details-' + rowIdx + '" class="leg-details" style="display:none;">'
+        + (secondaryBadgesForRow(r) ? '<div class="leg-flags">' + secondaryBadgesForRow(r) + '</div>' : '')
+        + '<dl class="leg-facts"><div><dt>Spread</dt><dd>' + spread + '</dd></div>'
+        + '<div><dt>Books</dt><dd>' + escapeAttr((r.books || []).map(bookName).join(' · ')) + '</dd></div>'
+        + (hasData && r.bar != null ? '<div><dt>Break-even</dt><dd>' + r.bar + '%</dd></div>' : '') + '</dl>'
+        + (note ? '<p class="leg-note">' + note + '</p>' : '')
+        + '<button type="button" class="browse-btn" onclick="event.stopPropagation(); checkLegContext(' + rowIdx + ')">Check context (AI)</button>'
+        + '<div id="context-result-' + rowIdx + '" class="raw-data-panel" style="display:none;margin-top:0.5rem;"></div>'
         + '</div>'
         + '</div>';
 }
@@ -568,13 +547,13 @@ function checkLegContext(rowIdx) {
     .then(function(resp) { return resp.json(); })
     .then(function(data) {
         if (!data.success) {
-            resultEl.innerHTML = '<div class="game-list-msg" style="color:var(--danger)">' + data.text + '</div>';
+            resultEl.innerHTML = '<div class="game-list-msg" style="color:var(--neg)">' + data.text + '</div>';
             return;
         }
-        resultEl.innerHTML = '<pre class="raw-json">' + escapeAttr(data.text) + '</pre>';
+        resultEl.innerHTML = '<div class="ai-text">' + escapeAttr(data.text) + '</div>';
     })
     .catch(function(err) {
-        resultEl.innerHTML = '<div class="game-list-msg" style="color:var(--danger)">Request failed: ' + err + '</div>';
+        resultEl.innerHTML = '<div class="game-list-msg" style="color:var(--neg)">Request failed: ' + err + '</div>';
     });
 }
 
@@ -622,7 +601,7 @@ function poissonBinomialDist(probs) {
     return dist;
 }
 
-// Mirrors the static breakeven-chart's Flex payout table -- sensible
+// Mirrors the ticket's payout table (Flex rows) -- sensible
 // defaults only. PrizePicks multipliers can vary by lineup/promos (see the
 // chart's own footnote), so these are pre-filled but always editable to
 // whatever real number the app is actually showing for this entry.
@@ -663,20 +642,21 @@ function matchesFilters(r) {
 
 function renderFilterBar() {
     var area = document.getElementById('filter-bar-area');
-    var html = '<div class="filter-bar">'
-        + '<input type="text" id="player-search" placeholder="Search players or stat type (hits, runs, assists...)" oninput="applySearch()">'
-        + '<label style="display:flex;align-items:center;gap:0.4rem;font-size:var(--fs-sm);color:var(--text-secondary);white-space:nowrap;margin:0;">'
-        + 'Profit boost <input type="number" id="profit-boost-input" min="0" step="1" placeholder="0" value="' + (profitBoostPct || '') + '" '
-        + 'style="width:70px;margin:0;padding:0.4rem 0.5rem;" oninput="applyBoost()">%'
-        + '</label>'
-        + '<div class="type-toggles">'
-        + '<button type="button" class="type-toggle active" data-type="goblin" onclick="toggleTypeFilter(this)">Goblins</button>'
-        + '<button type="button" class="type-toggle active" data-type="regular" onclick="toggleTypeFilter(this)">Regular</button>'
-        + '<button type="button" class="type-toggle active" data-type="demon" onclick="toggleTypeFilter(this)">Demons</button>'
-        + '<button type="button" class="raw-toggle-btn" onclick="toggleRawView()">Show raw data</button>'
+    var toggle = function(type, text) {
+        return '<button type="button" class="type-toggle' + (typeFilters[type] ? ' active' : '') + '" data-type="' + type + '" '
+            + 'aria-pressed="' + typeFilters[type] + '" onclick="toggleTypeFilter(this)">' + text + '</button>';
+    };
+    area.innerHTML = '<div class="filter-bar">'
+        + '<input type="text" id="player-search" placeholder="Search player or stat" aria-label="Search legs" '
+        + 'value="' + escapeAttr(searchQuery) + '" oninput="applySearch()">'
+        + '<div class="filter-row">'
+        + '<div class="type-toggles" role="group" aria-label="Line types">'
+        + toggle('goblin', 'Goblins') + toggle('regular', 'Regular') + toggle('demon', 'Demons')
+        + '</div>'
+        + '<label class="boost-field">Boost <input type="number" id="profit-boost-input" min="0" step="1" placeholder="0" value="'
+        + (profitBoostPct || '') + '" oninput="applyBoost()">%</label>'
         + '</div></div>'
         + '<div id="raw-data-panel" class="raw-data-panel" style="display:none;"></div>';
-    area.innerHTML = html;
 }
 
 function toggleRawView() {
@@ -711,7 +691,7 @@ function renderRawPanel() {
 
     var header = q
         ? ('Raw data across all books matching "' + searchQuery + '" (' + filteredMarkets.length + ' market blocks)')
-        : ('Raw data across all books -- all ' + filteredMarkets.length + ' market blocks (type in search to filter)');
+        : ('Raw data across all books: all ' + filteredMarkets.length + ' market blocks (type in search to filter)');
 
     panel.innerHTML = '<div class="meta">' + header + '</div><pre class="raw-json">' + escapeAttr(JSON.stringify(filteredMarkets, null, 2)) + '</pre>';
 }
@@ -720,6 +700,7 @@ function toggleTypeFilter(btn) {
     var type = btn.dataset.type;
     typeFilters[type] = !typeFilters[type];
     btn.classList.toggle('active', typeFilters[type]);
+    btn.setAttribute('aria-pressed', typeFilters[type]);
     renderFilteredColumns();
 }
 
@@ -740,6 +721,36 @@ function renderColumns(gameData) {
     renderFilteredColumns();
     renderRawPanel();
     renderManualLegForm();
+    renderSetupStrip();
+}
+
+// Once a game is on the board, setup shrinks to one line (sport + matchup)
+// and only opens on request -- the board, not the form, owns the page.
+var SPORT_SHORT = { basketball_wnba: 'WNBA', basketball_nba: 'NBA', baseball_mlb: 'MLB', americanfootball_nfl: 'NFL' };
+
+function renderSetupStrip() {
+    var setup = document.getElementById('setup');
+    var cur = document.getElementById('setup-current');
+    var filterArea = document.getElementById('filter-bar-area');
+    var gd = currentGameData;
+    if (filterArea) filterArea.hidden = !gd;
+    if (!setup || !cur) return;
+    if (gd) {
+        var when = '';
+        if (gd.commence) {
+            var d = new Date(gd.commence);
+            if (!isNaN(d)) when = d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+                + ' ' + d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+        }
+        cur.innerHTML = '<span class="sport">' + escapeAttr(SPORT_SHORT[gd.sport] || gd.sport || '') + '</span>'
+            + '<span class="matchup">' + escapeAttr(gd.label) + '</span>'
+            + (when ? '<span class="when">' + escapeAttr(when) + '</span>' : '');
+    } else {
+        cur.textContent = 'Pick a sport and date to scan';
+    }
+    // Force it open only when there's nothing else to look at (no game, or a
+    // scan error to fix); otherwise leave the user's own toggle alone.
+    if (!gd || document.querySelector('#view-scan > .error')) setup.open = true;
 }
 
 // ---- Manual/discounted picks (e.g. "Taco Tuesday" promos PropLine's feed
@@ -819,27 +830,28 @@ function renderManualLegForm() {
         var gameOptions = gameEvents.map(function(g) {
             return '<option value="' + escapeAttr(g.eventId) + '">' + escapeAttr(g.matchup) + '</option>';
         }).join('');
-        gamePicker = '<select id="manual-game" style="width:auto;flex:1 1 220px;margin:0;">' + gameOptions + '</select>';
+        gamePicker = '<select id="manual-game" aria-label="Game">' + gameOptions + '</select>';
     }
 
-    area.innerHTML = '<div class="entry-builder">'
-        + '<strong>Add a manual/discounted pick</strong> '
-        + '<span class="meta" style="margin:0;display:inline;">(for promos like "Taco Tuesday" discounts that PropLine\'s feed doesn\'t carry)</span>'
-        + '<div style="margin-top:0.6rem;display:flex;gap:0.5rem;flex-wrap:wrap;align-items:flex-start;">'
+    // An occasional promo pick, so it stays folded away until asked for.
+    area.innerHTML = '<details class="manual"><summary>Add a manual or promo pick</summary>'
+        + '<div class="manual-body">'
+        + '<p class="hint">For promos like "Taco Tuesday" discounts that PropLine\'s feed doesn\'t carry. Graded against the same consensus books.</p>'
+        + '<div class="manual-fields">'
         + gamePicker
-        + '<input type="text" id="manual-player" placeholder="Player name (exact)" style="width:auto;flex:1 1 180px;margin:0;">'
-        + '<select id="manual-market" style="width:auto;flex:1 1 160px;margin:0;">' + marketOptions + '</select>'
-        + '<input type="number" step="0.5" id="manual-point" placeholder="Line, e.g. 62.5" style="width:auto;flex:0 1 120px;margin:0;">'
-        + '<select id="manual-type" style="width:auto;flex:0 1 220px;margin:0;">'
+        + '<input type="text" id="manual-player" placeholder="Player name (exact)" aria-label="Player name">'
+        + '<select id="manual-market" aria-label="Market">' + marketOptions + '</select>'
+        + '<input type="number" step="0.5" id="manual-point" placeholder="Line, e.g. 62.5" aria-label="Line">'
+        + '<select id="manual-type" aria-label="Line type">'
         + '<option value="discount" selected>Discount promo (standard payout)</option>'
         + '<option value="standard">Standard (normal line)</option>'
         + '<option value="goblin">Goblin (reduced payout)</option>'
         + '<option value="demon">Demon (boosted payout)</option>'
         + '</select>'
-        + '<button type="button" onclick="submitManualLeg()" style="margin:0;">Add &amp; grade</button>'
+        + '<button type="button" onclick="submitManualLeg()">Add &amp; grade</button>'
         + '</div>'
         + '<div id="manual-leg-result" class="mult-result"></div>'
-        + '</div>';
+        + '</div></details>';
 }
 
 function submitManualLeg() {
@@ -855,9 +867,9 @@ function submitManualLeg() {
     var point = parseFloat(document.getElementById('manual-point').value);
     var dfsType = document.getElementById('manual-type').value;
 
-    if (!player) { resultEl.innerHTML = '<span style="color:var(--danger)">Enter a player name.</span>'; return; }
-    if (!market) { resultEl.innerHTML = '<span style="color:var(--danger)">Pick a market.</span>'; return; }
-    if (isNaN(point)) { resultEl.innerHTML = '<span style="color:var(--danger)">Enter a valid line.</span>'; return; }
+    if (!player) { resultEl.innerHTML = '<span style="color:var(--neg)">Enter a player name.</span>'; return; }
+    if (!market) { resultEl.innerHTML = '<span style="color:var(--neg)">Pick a market.</span>'; return; }
+    if (isNaN(point)) { resultEl.innerHTML = '<span style="color:var(--neg)">Enter a valid line.</span>'; return; }
 
     resultEl.innerHTML = spinnerHtml('Grading...');
     fetch('/grade_manual', {
@@ -871,16 +883,16 @@ function submitManualLeg() {
     .then(function(resp) { return resp.json(); })
     .then(function(data) {
         if (!data.success) {
-            resultEl.innerHTML = '<span style="color:var(--danger)">' + data.message + '</span>';
+            resultEl.innerHTML = '<span style="color:var(--neg)">' + data.message + '</span>';
             return;
         }
         var matchedGame = gameEvents.filter(function(g) { return g.eventId === eventId; })[0];
         if (matchedGame) data.row.matchup = matchedGame.matchup;
         addManualLegRow(data.row);
-        resultEl.innerHTML = '<span style="color:var(--success)">Added -- see it in the results below.</span>';
+        resultEl.innerHTML = '<span style="color:var(--pos)">Added and ranked on the board.</span>';
     })
     .catch(function(err) {
-        resultEl.innerHTML = '<span style="color:var(--danger)">Request failed: ' + err + '</span>';
+        resultEl.innerHTML = '<span style="color:var(--neg)">Request failed: ' + err + '</span>';
     });
 }
 
@@ -904,50 +916,74 @@ function addManualLegRow(row) {
         currentGameData = gd;
         renderFilteredColumns();
     } else {
-        alert('Could not save this pick -- browser storage is full.');
+        alert('Could not save this pick. Browser storage is full.');
     }
 }
 
+var TIER_RANK = { 'TIER S': 5, 'TIER A': 4, 'TIER B': 3, 'TIER C': 2, 'UNKNOWN': 1.5, 'BELOW BAR': 1 };
+
+// The big board: legs posted in full-width tier bands, strongest first, each
+// band with a big tier letter. Re-sorted client-side because a profit boost
+// can move a leg's tier.
+var BOARD_BANDS = [
+    ['TIER S', 'S', 'Elite'], ['TIER A', 'A', 'Strong'], ['TIER B', 'B', 'Solid'], ['TIER C', 'C', 'Thin'],
+    ['UNKNOWN', '?', 'Unpriced'], ['BELOW BAR', '\u2013', 'Below the bar'], ['NO DATA', '\u00b7', 'No data'],
+];
+
 function renderFilteredColumns() {
     var area = document.getElementById('results-area');
-    if (!currentGameData) { area.innerHTML = ''; return; }
+    if (!currentGameData) {
+        area.innerHTML = '<div class="board-empty"><strong>The board is empty.</strong> '
+            + 'Pick a sport above, then click a game to scan it, or scan the whole slate for that date.</div>';
+        return;
+    }
 
     var gameData = currentGameData;
     var allRows = gameData.rows;
-    var rows = allRows.filter(matchesFilters);
-    var gameKey = gameData.gameKey;
-    var gameLabel = gameData.label;
-    var goblins = rows.filter(function(r) { return r.dfs_type === 'goblin'; });
-    var demons = rows.filter(function(r) { return r.dfs_type === 'demon'; });
-    var regular = rows.filter(function(r) { return r.dfs_type !== 'goblin' && r.dfs_type !== 'demon'; });
-
-    function colHtml(list, emptyMsg) {
-        if (list.length === 0) return '<div class="empty-col">' + emptyMsg + '</div>';
-        return list.map(function(r) { return legRowHtml(withBoost(r), gameKey, gameLabel, allRows.indexOf(r)); }).join('');
-    }
+    var shown = allRows.filter(matchesFilters).map(function(r) {
+        return { r: withBoost(r), idx: allRows.indexOf(r) };
+    });
+    var marginOf = function(r) { return (r.margin === null || r.margin === undefined) ? -999 : r.margin; };
+    var bands = {};
+    shown.forEach(function(s) {
+        var key = (s.r.consensus_pct === null || s.r.consensus_pct === undefined) ? 'NO DATA' : (s.r.tier || 'BELOW BAR');
+        (bands[key] = bands[key] || []).push(s);
+    });
 
     var barText = profitBoostPct
-        ? (gameData.bar + '% → ' + withBoost({ bar: gameData.bar }).bar + '% with ' + profitBoostPct + '% boost')
+        ? (gameData.bar + '% \u2192 ' + withBoost({ bar: gameData.bar }).bar + '% with ' + profitBoostPct + '% boost')
         : (gameData.bar + '%');
-    var metaText = rows.length === allRows.length
-        ? (allRows.length + ' legs scanned | break-even bar: ' + barText)
-        : (rows.length + ' of ' + allRows.length + ' legs shown | break-even bar: ' + barText);
+    var legsText = shown.length === allRows.length
+        ? ('<strong>' + allRows.length + '</strong> legs')
+        : ('<strong>' + shown.length + '</strong> of ' + allRows.length + ' legs');
 
-    var gamesLine = '';
-    if (gameData.scannedGames) {
-        gamesLine = '<div class="meta">' + gameData.scannedGames.length + ' game(s) included: '
-            + gameData.scannedGames.join(', ') + '</div>';
+    var html = gameData.skippedNote ? ('<div class="skipped-warning">' + escapeAttr(gameData.skippedNote) + '</div>') : '';
+    html += '<div class="board-summary"><span>' + legsText + '</span>'
+        + '<span>Break-even <strong>' + barText + '</strong></span>'
+        + (gameData.scannedGames
+            ? '<span title="' + escapeAttr(gameData.scannedGames.join(', ')) + '"><strong>' + gameData.scannedGames.length + '</strong> games</span>'
+            : '')
+        + '<button type="button" class="raw-toggle-btn" onclick="toggleRawView()">Raw data</button>'
+        + '</div>';
+
+    if (shown.length === 0) {
+        area.innerHTML = html + '<div class="board-empty">No legs match these filters. Clear the search or turn a line type back on.</div>';
+        return;
     }
 
-    var html = gameData.skippedNote ? ('<div class="skipped-warning">' + gameData.skippedNote + '</div>') : '';
-    html += gamesLine;
-    html += '<div class="meta">' + metaText + '</div>';
-    html += '<div class="columns-grid">'
-        + '<div><div class="column-header goblin">Goblins</div>' + colHtml(goblins, 'No Goblin legs found.') + '</div>'
-        + '<div><div class="column-header regular">Regular</div>' + colHtml(regular, 'No standard legs found.') + '</div>'
-        + '<div><div class="column-header demon">Demons</div>' + colHtml(demons, 'No Demon legs found.') + '</div>'
-        + '</div>';
-    area.innerHTML = html;
+    html += '<div class="bb-board">';
+    BOARD_BANDS.forEach(function(band) {
+        var list = bands[band[0]];
+        if (!list) return;
+        list.sort(function(a, b) { return marginOf(b.r) - marginOf(a.r); });
+        html += '<section class="bb-band bb-' + (TIER_CHIP_CLASS[band[0]] || 'chip-below') + '" aria-label="' + band[2] + '">'
+            + '<header class="bb-rail"><span class="bb-letter">' + band[1] + '</span><span class="bb-name">' + band[2] + '</span>'
+            + '<span class="bb-count">' + list.length + (list.length === 1 ? ' leg' : ' legs') + '</span></header>'
+            + '<div class="bb-strips">'
+            + list.map(function(s) { return legStripHtml(s.r, gameData.gameKey, gameData.label, s.idx); }).join('')
+            + '</div></section>';
+    });
+    area.innerHTML = html + '</div>';
 }
 
 // ---- Cross-game entry selection ----
@@ -959,7 +995,7 @@ function loadSelected() {
 }
 function saveSelected() {
     try { localStorage.setItem(SELECTED_KEY, JSON.stringify(selectedLegs)); }
-    catch (e) { alert('Could not save your selected legs -- browser storage is full. Close some old tabs.'); }
+    catch (e) { alert('Could not save your selected legs. Browser storage is full, so close some old tabs.'); }
 }
 
 function toggleLeg(checkboxEl) {
@@ -978,6 +1014,8 @@ function toggleLeg(checkboxEl) {
     } else {
         delete selectedLegs[legId];
     }
+    var row = checkboxEl.closest('.leg');
+    if (row) row.classList.toggle('picked', checkboxEl.checked);
     saveSelected();
     renderEntryBuilder();
 }
@@ -985,8 +1023,12 @@ function toggleLeg(checkboxEl) {
 function removeLeg(legId) {
     delete selectedLegs[legId];
     saveSelected();
-    var box = document.querySelector('.leg-check[data-legid="' + legId + '"]');
-    if (box) box.checked = false;
+    var box = document.querySelector('.leg-check[data-legid="' + CSS.escape(legId) + '"]');
+    if (box) {
+        box.checked = false;
+        var row = box.closest('.leg');
+        if (row) row.classList.remove('picked');
+    }
     renderEntryBuilder();
 }
 
@@ -1026,15 +1068,64 @@ function selectQualifyingTiers() {
     renderEntryBuilder();
     renderFilteredColumns();
     if (added === 0) {
-        alert('No new Tier A/B/S picks to add from this tab -- either none currently qualify (respecting active filters/boost), or they\'re already selected.');
+        alert('No new Tier A/B/S picks to add from this tab. Either none qualify with the current filters and boost, or they\'re already selected.');
     }
+}
+
+// Per-leg break-even for each entry size -- the same figures as the payout
+// table below, surfaced live next to the multiplier where they're used.
+var POWER_BREAKEVEN = { 2: 57.7, 3: 55.0, 4: 56.2, 5: 54.9, 6: 54.7 };
+var FLEX_BREAKEVEN = { 3: 57.7, 4: 55.0, 5: 54.3, 6: 54.2 };
+var ticketOpen = false;
+var lastTicketCount = null;
+
+function toggleTicket() {
+    ticketOpen = !ticketOpen;
+    var ticket = document.querySelector('.ticket');
+    if (ticket) ticket.classList.toggle('open', ticketOpen);
+    var btn = document.getElementById('ticket-toggle');
+    if (btn) {
+        btn.textContent = ticketOpen ? 'Close' : 'Open';
+        btn.setAttribute('aria-expanded', ticketOpen);
+    }
+}
+
+function needLineHtml(n, isFlex, avgPct) {
+    var table = isFlex ? FLEX_BREAKEVEN : POWER_BREAKEVEN;
+    var need = table[n];
+    if (n < 2) return 'Add at least 2 legs to build an entry.';
+    if (isFlex && n < 3) return 'Flex needs 3 or more legs.';
+    if (need == null) return 'No reference break-even for a ' + n + '-leg entry.';
+    return n + '-pick ' + (isFlex ? 'Flex' : 'Power') + ' needs <span class="fig">' + need.toFixed(1) + '%</span> per leg. '
+        + 'Your legs average <span class="fig ' + (avgPct >= need ? 'ok' : 'short') + '">' + avgPct.toFixed(1) + '%</span>.';
+}
+
+function payoutTableHtml(n, isFlex) {
+    var cur = function(type, picks) { return (type === (isFlex ? 'flex' : 'power') && picks === n) ? ' class="current"' : ''; };
+    return '<details class="payout-table ticket-section"><summary>Payout table</summary>'
+        + '<div class="section-label">Power Play</div>'
+        + '<table class="data-table"><tr><th>Picks</th><th>Pays</th><th>Break-even/leg</th></tr>'
+        + '<tr' + cur('power', 2) + '><td>2</td><td>3x</td><td>57.7%</td></tr>'
+        + '<tr' + cur('power', 3) + '><td>3</td><td>6x</td><td>55.0%</td></tr>'
+        + '<tr' + cur('power', 4) + '><td>4</td><td>10x</td><td>56.2%</td></tr>'
+        + '<tr' + cur('power', 5) + '><td>5</td><td>20x</td><td>54.9%</td></tr>'
+        + '<tr' + cur('power', 6) + '><td>6</td><td>37.5x</td><td>54.7%</td></tr></table>'
+        + '<div class="section-label">Flex Play</div>'
+        + '<table class="data-table"><tr><th>Picks</th><th>All</th><th>1 miss</th><th>2 miss</th><th>B/E</th></tr>'
+        + '<tr' + cur('flex', 3) + '><td>3</td><td>3x</td><td>1x</td><td>--</td><td>57.7%</td></tr>'
+        + '<tr' + cur('flex', 4) + '><td>4</td><td>6x</td><td>1.5x</td><td>--</td><td>55.0%</td></tr>'
+        + '<tr' + cur('flex', 5) + '><td>5</td><td>10x</td><td>2x</td><td>0.4x</td><td>54.3%</td></tr>'
+        + '<tr' + cur('flex', 6) + '><td>6</td><td>25x</td><td>2x</td><td>0.4x</td><td>54.2%</td></tr></table>'
+        + '<div class="footnote">Flex break-even assumes every leg has the same win probability. '
+        + 'Multipliers vary by lineup and promos. Confirm the number in the app before submitting.</div>'
+        + '</details>';
 }
 
 function renderEntryBuilder() {
     var area = document.getElementById('entry-builder-area');
     var legIds = Object.keys(selectedLegs);
-    var autoSelectBtn = '<button type="button" class="browse-btn" onclick="selectQualifyingTiers()" style="margin-bottom:0.6rem;">'
-        + 'Select all Tier A/B/S from this tab</button>';
+    var n = legIds.length;
+    var autoSelectBtn = '<button type="button" class="browse-btn" onclick="selectQualifyingTiers()">Add every S/A/B leg from this tab</button>';
 
     // Re-rendering (e.g. toggling Entry type) would otherwise wipe whatever
     // the user already typed into these -- carry them forward across re-renders.
@@ -1044,25 +1135,42 @@ function renderEntryBuilder() {
     var prevOneMiss = prevOneMissEl ? prevOneMissEl.value : '';
     var prevTwoMissEl = document.getElementById('entry-mult-2miss');
     var prevTwoMiss = prevTwoMissEl ? prevTwoMissEl.value : '';
+    var typeSelectEl = document.getElementById('log-entry-type');
+    var isFlex = typeSelectEl ? typeSelectEl.value === 'Flex' : false;
 
-    if (legIds.length === 0) {
-        area.innerHTML = '<div class="entry-builder">' + autoSelectBtn
-            + '<div><strong>Build an entry:</strong> check legs '
-            + '(from any game/tab) to combine them here -- selections carry across tabs.</div></div>';
+    // The count ticks (a stepped LED refresh) only when it actually changed.
+    var tickCls = (lastTicketCount !== null && lastTicketCount !== n) ? ' tick' : '';
+    lastTicketCount = n;
+
+    var head = '<div class="ticket-head">'
+        + '<span class="ticket-title">Ticket</span>'
+        + '<span class="ticket-count' + tickCls + '" aria-live="polite" aria-label="' + n + ' legs on ticket">' + n + '</span>'
+        + '<span id="ticket-sum" class="ticket-sum"></span>'
+        + '<button type="button" id="ticket-toggle" class="ticket-toggle" aria-expanded="' + ticketOpen + '" onclick="toggleTicket()">'
+        + (ticketOpen ? 'Close' : 'Open') + '</button>'
+        + '</div>';
+
+    if (n === 0) {
+        area.innerHTML = '<div class="ticket' + (ticketOpen ? ' open' : '') + '">' + head
+            + '<div class="ticket-body">'
+            + '<p class="ticket-empty">No legs yet. Tap a row on the board to add it. Picks carry across tabs.</p>'
+            + (currentGameData ? autoSelectBtn : '')
+            + payoutTableHtml(0, false)
+            + '</div></div>';
         return;
     }
 
     var listHtml = legIds.map(function(legId) {
         var leg = selectedLegs[legId];
-        return '<div class="selected-leg" data-legid="' + escapeAttr(legId) + '" onclick="removeLeg(this.dataset.legid)" title="Click to remove">'
-            + '<span>' + escapeAttr(leg.label) + ' <span class="meta">(' + escapeAttr(leg.gameLabel) + ')</span></span>'
-            + '<span class="tab-close">&times;</span>'
+        var pct = isNaN(leg.consensus_pct) ? '--' : leg.consensus_pct + '%';
+        return '<div class="selected-leg" data-legid="' + escapeAttr(legId) + '" onclick="removeLeg(this.dataset.legid)" title="Remove from ticket">'
+            + '<span class="sl-label">' + escapeAttr(leg.label) + '<span class="sl-game">' + escapeAttr(leg.gameLabel) + '</span></span>'
+            + '<span class="sl-pct">' + pct + '</span>'
+            + '<span class="sl-remove">Remove</span>'
             + '</div>';
     }).join('');
 
-    var n = legIds.length;
-    var typeSelectEl = document.getElementById('log-entry-type');
-    var isFlex = typeSelectEl ? typeSelectEl.value === 'Flex' : false;
+    var avgPct = legIds.reduce(function(acc, id) { return acc + (selectedLegs[id].consensus_pct || 0); }, 0) / n;
     var showFlexTiers = isFlex && n >= 3;
     var flexDefaults = FLEX_PAYOUT_DEFAULTS[n] || { oneMiss: null, twoMiss: null };
 
@@ -1070,53 +1178,69 @@ function renderEntryBuilder() {
     if (showFlexTiers) {
         var oneMissVal = prevOneMiss !== '' ? prevOneMiss : (flexDefaults.oneMiss != null ? flexDefaults.oneMiss : '');
         var twoMissVal = prevTwoMiss !== '' ? prevTwoMiss : flexDefaults.twoMiss;
-        flexTierFieldsHtml = '<div style="margin-top:0.5rem;">'
-            + (n - 1) + ' of ' + n + ' hit pays: '
-            + '<input type="number" step="0.01" min="0" id="entry-mult-1miss" placeholder="e.g. 1.5" '
-            + 'value="' + oneMissVal + '" oninput="calcEntry()" style="width:100px;display:inline-block;margin:0 0 0.5rem 0.4rem;">'
+        flexTierFieldsHtml = '<div class="field-row">'
+            + '<div><label for="entry-mult-1miss">' + (n - 1) + ' of ' + n + ' pays</label>'
+            + '<input type="number" step="0.01" min="0" id="entry-mult-1miss" placeholder="e.g. 1.5" value="' + oneMissVal + '" oninput="calcEntry()"></div>'
             + (flexDefaults.twoMiss != null
-                ? '<br>' + (n - 2) + ' of ' + n + ' hit pays: '
-                    + '<input type="number" step="0.01" min="0" id="entry-mult-2miss" placeholder="e.g. 0.4" '
-                    + 'value="' + twoMissVal + '" oninput="calcEntry()" style="width:100px;display:inline-block;margin:0 0 0.5rem 0.4rem;">'
+                ? '<div><label for="entry-mult-2miss">' + (n - 2) + ' of ' + n + ' pays</label>'
+                    + '<input type="number" step="0.01" min="0" id="entry-mult-2miss" placeholder="e.g. 0.4" value="' + twoMissVal + '" oninput="calcEntry()"></div>'
                 : '')
-            + '<div class="meta">Defaults from the reference chart -- multipliers can vary by lineup/promos, '
-            + 'edit these to match the real numbers shown in the app for this entry.</div>'
-            + '</div>';
+            + '</div>'
+            + '<p class="footnote">Pre-filled from the payout table. Edit to match what the app shows for this entry.</p>';
     }
 
-    var html = '<div class="entry-builder">'
-        + autoSelectBtn
-        + '<strong>Building entry (' + n + ' leg' + (n > 1 ? 's' : '') + '):</strong>'
-        + '<div style="margin: 0.4rem 0;">' + listHtml + '</div>'
-        + '<div>Entry type: '
+    area.innerHTML = '<div class="ticket' + (ticketOpen ? ' open' : '') + '">' + head
+        + '<div class="ticket-body">'
+        + listHtml
+        + '<div class="field-row">'
+        + '<div><label for="log-entry-type">Entry</label>'
         + '<select id="log-entry-type" onchange="renderEntryBuilder()"><option value="Power"' + (isFlex ? '' : ' selected') + '>Power</option>'
-        + '<option value="Flex"' + (isFlex ? ' selected' : '') + '>Flex</option></select>'
-        + '</div>'
-        + '<div style="margin-top:0.5rem;">' + (isFlex ? 'All ' + n + ' hit pays' : 'Real payout multiplier') + ': '
-        + '<input type="number" step="0.01" min="0.01" id="entry-mult" placeholder="e.g. 2.3" value="' + prevMult + '" oninput="calcEntry()">'
+        + '<option value="Flex"' + (isFlex ? ' selected' : '') + '>Flex</option></select></div>'
+        + '<div><label for="entry-mult">' + (isFlex ? 'All ' + n + ' pays' : 'Pays') + '</label>'
+        + '<input type="number" step="0.01" min="0.01" id="entry-mult" placeholder="e.g. 6" value="' + prevMult + '" oninput="calcEntry()"></div>'
         + '</div>'
         + flexTierFieldsHtml
+        + '<div class="need-line">' + needLineHtml(n, isFlex, avgPct) + '</div>'
         + '<div id="entry-result" class="mult-result"></div>'
-        + '<button type="button" class="log-parlay-btn" onclick="logParlay()">Log this parlay</button>'
+        + '<button type="button" class="log-parlay-btn" onclick="logParlay()">Log this entry</button>'
         + '<div id="log-parlay-result" class="mult-result"></div>'
-        + '<div style="margin-top:0.7rem;padding-top:0.7rem;border-top:1px solid var(--border);">'
-        + '<button type="button" class="browse-btn" onclick="logLegsForTracking()">'
-        + 'Log these legs for tracking only (no multiplier)</button>'
-        + '<div class="meta" style="margin-top:0.3rem;">Records each leg\'s tier and probability now -- '
-        + 'fill in Result (W/L) in the spreadsheet later to check whether tiers actually predict hit rate.</div>'
+        + '<div class="ticket-section">'
+        + '<button type="button" class="browse-btn" onclick="logLegsForTracking()">Log legs for tracking only</button>'
+        + '<p class="footnote">Records each leg\'s tier and probability now, with no multiplier. Check results later to see whether tiers predict hit rate.</p>'
         + '<div id="log-tracking-result" class="mult-result"></div>'
         + '</div>'
-        + (legIds.length >= 2
-            ? '<div style="margin-top:0.7rem;padding-top:0.7rem;border-top:1px solid var(--border);">'
+        + (n >= 2
+            ? '<div class="ticket-section">'
                 + '<button type="button" class="browse-btn" onclick="checkEntryCorrelation()">Check correlation (AI)</button>'
-                + '<div class="meta" style="margin-top:0.3rem;">Advisory only -- flags real relationships between legs '
-                + '(same game, related stats) in plain language. Never recalculates the combined probability above.</div>'
+                + '<p class="footnote">Advisory only: flags related legs in plain language, never changes the numbers.</p>'
                 + '<div id="correlation-result" style="display:none;margin-top:0.4rem;"></div>'
                 + '</div>'
             : '')
-        + '</div>';
-    area.innerHTML = html;
+        + '<div class="ticket-section">' + autoSelectBtn + '</div>'
+        + payoutTableHtml(n, isFlex)
+        + '</div></div>';
     calcEntry();
+}
+
+// "6x · clears 55.0%" beside the leg count -- the closed phone bar's whole story in one line.
+function renderTicketSum() {
+    var el = document.getElementById('ticket-sum');
+    if (!el) return;
+    var legIds = Object.keys(selectedLegs);
+    var n = legIds.length;
+    if (n === 0) { el.textContent = ''; return; }
+    var parts = [];
+    var multEl = document.getElementById('entry-mult');
+    var m = multEl ? parseFloat(multEl.value) : NaN;
+    if (m > 0) parts.push(m + 'x');
+    var typeSelectEl = document.getElementById('log-entry-type');
+    var isFlex = typeSelectEl && typeSelectEl.value === 'Flex';
+    var need = (isFlex ? FLEX_BREAKEVEN : POWER_BREAKEVEN)[n];
+    if (need != null) {
+        var avg = legIds.reduce(function(acc, id) { return acc + (selectedLegs[id].consensus_pct || 0); }, 0) / n;
+        parts.push(avg >= need ? 'clears ' + need.toFixed(1) + '%' : 'short of ' + need.toFixed(1) + '%');
+    }
+    el.textContent = parts.join(' · ');
 }
 
 function checkEntryCorrelation() {
@@ -1143,13 +1267,13 @@ function checkEntryCorrelation() {
     .then(function(resp) { return resp.json(); })
     .then(function(data) {
         if (!data.success) {
-            resultEl.innerHTML = '<div class="game-list-msg" style="color:var(--danger)">' + data.text + '</div>';
+            resultEl.innerHTML = '<div class="game-list-msg" style="color:var(--neg)">' + data.text + '</div>';
             return;
         }
-        resultEl.innerHTML = '<pre class="raw-json">' + escapeAttr(data.text) + '</pre>';
+        resultEl.innerHTML = '<div class="ai-text">' + escapeAttr(data.text) + '</div>';
     })
     .catch(function(err) {
-        resultEl.innerHTML = '<div class="game-list-msg" style="color:var(--danger)">Request failed: ' + err + '</div>';
+        resultEl.innerHTML = '<div class="game-list-msg" style="color:var(--neg)">Request failed: ' + err + '</div>';
     });
 }
 
@@ -1159,7 +1283,7 @@ function logParlay() {
     var m = parseFloat(multEl ? multEl.value : NaN);
 
     if (!m || m <= 1.0) {
-        resultEl.innerHTML = '<span style="color:var(--danger)">Enter the real payout multiplier above first.</span>';
+        resultEl.innerHTML = '<span style="color:var(--neg)">Enter the real payout multiplier above first.</span>';
         return;
     }
 
@@ -1168,7 +1292,7 @@ function logParlay() {
         .filter(function(d) { return d && d.player; });
 
     if (legsForLog.length === 0) {
-        resultEl.innerHTML = '<span style="color:var(--danger)">No loggable leg data found -- try re-selecting the legs.</span>';
+        resultEl.innerHTML = '<span style="color:var(--neg)">No loggable leg data found. Try re-selecting the legs.</span>';
         return;
     }
 
@@ -1196,13 +1320,13 @@ function logParlay() {
     .then(function(resp) { return resp.json(); })
     .then(function(data) {
         if (data.success) {
-            resultEl.innerHTML = '<span style="color:var(--success)">' + data.message + '</span>';
+            resultEl.innerHTML = '<span style="color:var(--pos)">' + data.message + '</span>';
         } else {
-            resultEl.innerHTML = '<span style="color:var(--danger)">' + data.message + '</span>';
+            resultEl.innerHTML = '<span style="color:var(--neg)">' + data.message + '</span>';
         }
     })
     .catch(function(err) {
-        resultEl.innerHTML = '<span style="color:var(--danger)">Request failed: ' + err + '</span>';
+        resultEl.innerHTML = '<span style="color:var(--neg)">Request failed: ' + err + '</span>';
     });
 }
 
@@ -1213,7 +1337,7 @@ function logLegsForTracking() {
         .filter(function(d) { return d && d.player; });
 
     if (legsForLog.length === 0) {
-        resultEl.innerHTML = '<span style="color:var(--danger)">No loggable leg data found -- try re-selecting the legs.</span>';
+        resultEl.innerHTML = '<span style="color:var(--neg)">No loggable leg data found. Try re-selecting the legs.</span>';
         return;
     }
 
@@ -1228,13 +1352,13 @@ function logLegsForTracking() {
     .then(function(resp) { return resp.json(); })
     .then(function(data) {
         if (data.success) {
-            resultEl.innerHTML = '<span style="color:var(--success)">' + data.message + '</span>';
+            resultEl.innerHTML = '<span style="color:var(--pos)">' + data.message + '</span>';
         } else {
-            resultEl.innerHTML = '<span style="color:var(--danger)">' + data.message + '</span>';
+            resultEl.innerHTML = '<span style="color:var(--neg)">' + data.message + '</span>';
         }
     })
     .catch(function(err) {
-        resultEl.innerHTML = '<span style="color:var(--danger)">Request failed: ' + err + '</span>';
+        resultEl.innerHTML = '<span style="color:var(--neg)">Request failed: ' + err + '</span>';
     });
 }
 
@@ -1242,6 +1366,7 @@ function calcEntry() {
     var resultEl = document.getElementById('entry-result');
     var multEl = document.getElementById('entry-mult');
     if (!resultEl || !multEl) return;
+    renderTicketSum();
     var legIds = Object.keys(selectedLegs);
     if (legIds.length === 0) {
         resultEl.innerHTML = '';
@@ -1255,8 +1380,7 @@ function calcEntry() {
 
     var m = parseFloat(multEl.value);
     if (!m || m <= 0) {
-        resultEl.innerHTML = 'Probability all ' + n + ' hit: ' + allHitPct
-            + '%. Enter the real payout multiplier above to see if it clears break-even.';
+        resultEl.innerHTML = 'All ' + n + ' hit: ' + allHitPct + '%. Enter the payout to see if it clears break-even.';
         return;
     }
 
@@ -1283,37 +1407,28 @@ function calcEntry() {
         var twoMissM = twoMissEl ? parseFloat(twoMissEl.value) : NaN;
 
         ev = dist[n] * m;
-        breakdownLine = 'P(all ' + n + ' hit): ' + (dist[n] * 100).toFixed(1) + '%';
+        breakdownLine = 'P(all ' + n + '): ' + (dist[n] * 100).toFixed(1) + '%';
         if (!isNaN(oneMissM) && oneMissM > 0) {
             ev += dist[n - 1] * oneMissM;
-            breakdownLine += ' | P(' + (n - 1) + ' of ' + n + '): ' + (dist[n - 1] * 100).toFixed(1) + '%';
+            breakdownLine += ' · P(' + (n - 1) + ' of ' + n + '): ' + (dist[n - 1] * 100).toFixed(1) + '%';
         }
         if (twoMissEl && !isNaN(twoMissM) && twoMissM > 0) {
             ev += dist[n - 2] * twoMissM;
-            breakdownLine += ' | P(' + (n - 2) + ' of ' + n + '): ' + (dist[n - 2] * 100).toFixed(1) + '%';
+            breakdownLine += ' · P(' + (n - 2) + ' of ' + n + '): ' + (dist[n - 2] * 100).toFixed(1) + '%';
         }
     }
 
     var marginPts = (ev - 1.0) * 100;
     var tier = tierForMargin(marginPts);
-    var TIER_COLOR = { 'TIER S': 'var(--success)', 'TIER A': 'var(--accent)', 'TIER B': 'var(--warning)', 'TIER C': 'var(--text-secondary)' };
-    var color = TIER_COLOR[tier] || 'var(--text-muted)';
-    resultEl.innerHTML = 'Probability all ' + n + ' hit: ' + allHitPct + '% | ' + breakdownLine + '<br>'
-        + 'Modelled EV: ' + ev.toFixed(3) + 'x | Edge margin: ' + (marginPts >= 0 ? '+' : '') + marginPts.toFixed(1) + ' pts | '
+    var TIER_COLOR = { 'TIER S': 'var(--pos)', 'TIER A': 'var(--text)', 'TIER B': 'var(--text)', 'TIER C': 'var(--text-2)' };
+    var color = TIER_COLOR[tier] || 'var(--neg)';
+    resultEl.innerHTML = 'All ' + n + ' hit: ' + allHitPct + '% · ' + breakdownLine + '<br>'
+        + 'EV ' + ev.toFixed(3) + 'x · margin ' + (marginPts >= 0 ? '+' : '') + marginPts.toFixed(1) + ' pts · '
         + '<strong style="color:' + color + '">' + tier + '</strong>';
 }
 
 // ---- Page load: merge any new scan into storage, then render from storage ----
 (function() {
-    try {
-        if (localStorage.getItem(BREAKEVEN_EXPANDED_KEY) === '1') {
-            var body = document.getElementById('breakeven-chart-body');
-            var chevron = document.getElementById('breakeven-chevron');
-            if (body) body.style.display = 'block';
-            if (chevron) chevron.textContent = '▾';
-        }
-    } catch (e) { /* ignore */ }
-
     // A scan is a real form POST (full page reload), and it can only be
     // triggered from the Scan view, so this naturally stays put across that
     // reload -- it only matters for an ordinary browser refresh on Track.
@@ -1368,6 +1483,7 @@ function calcEntry() {
     renderFilterBar();
     renderEntryBuilder();
     if (activeKey && games[activeKey]) renderColumns(games[activeKey]);
+    else { renderFilteredColumns(); renderSetupStrip(); }
 
     var sportSelect = document.getElementById('sport-select');
     if (sportSelect && sportSelect.value) browseGames();

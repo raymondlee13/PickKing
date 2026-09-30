@@ -1,308 +1,423 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-09-19T20:35:16Z",
+  "generatedAt": "2026-09-28T00:31:25+00:00",
   "title": "Design System: PickKing",
   "extensions": {
     "colorMeta": {
-      "masthead-accent": {
+      "field-navy": {
+        "role": "neutral",
+        "displayName": "Field Navy",
+        "canonical": "#0a1330",
+        "tonalRamp": [
+          "#0d193f",
+          "#162a6a",
+          "#1f3a94",
+          "#284bbe",
+          "#4165d7",
+          "#7891e3",
+          "#b3c1ef",
+          "#eaeefb"
+        ]
+      },
+      "surface-navy": {
+        "role": "neutral",
+        "displayName": "Surface Navy",
+        "canonical": "#101c42",
+        "tonalRamp": [
+          "#0f1a3e",
+          "#192c67",
+          "#233d90",
+          "#2d4eb9",
+          "#4668d2",
+          "#7c94df",
+          "#b5c3ed",
+          "#eaeefa"
+        ]
+      },
+      "surface-navy-raised": {
+        "role": "neutral",
+        "displayName": "Raised Navy",
+        "canonical": "#17275a",
+        "tonalRamp": [
+          "#101a3d",
+          "#1a2c66",
+          "#243e8e",
+          "#2f4fb7",
+          "#4869d0",
+          "#7d94de",
+          "#b6c3ec",
+          "#ebeefa"
+        ]
+      },
+      "surface-navy-hover": {
+        "role": "neutral",
+        "displayName": "Hover Navy",
+        "canonical": "#15245a",
+        "tonalRamp": [
+          "#0e193e",
+          "#182967",
+          "#223a91",
+          "#2b4aba",
+          "#4564d4",
+          "#7b91e0",
+          "#b5c1ee",
+          "#eaeefa"
+        ]
+      },
+      "picked-navy": {
+        "role": "neutral",
+        "displayName": "Picked Navy",
+        "canonical": "#1b2a63",
+        "tonalRamp": [
+          "#10193c",
+          "#1b2a64",
+          "#263b8c",
+          "#314cb4",
+          "#4b66ce",
+          "#7f92dc",
+          "#b7c2eb",
+          "#ebeefa"
+        ]
+      },
+      "column-head-navy": {
+        "role": "neutral",
+        "displayName": "Column-Head Navy",
+        "canonical": "#0d1838",
+        "tonalRamp": [
+          "#0e1b3e",
+          "#182c67",
+          "#223e91",
+          "#2b50ba",
+          "#4569d4",
+          "#7b95e0",
+          "#b4c3ee",
+          "#eaeefa"
+        ]
+      },
+      "rule-navy": {
+        "role": "neutral",
+        "displayName": "Rule Navy",
+        "canonical": "#22346b",
+        "tonalRamp": [
+          "#121c3a",
+          "#1f2f61",
+          "#2b4287",
+          "#3755ae",
+          "#516ec8",
+          "#8398d8",
+          "#b9c5e9",
+          "#eceff9"
+        ]
+      },
+      "rule-navy-strong": {
+        "role": "neutral",
+        "displayName": "Strong Rule Navy",
+        "canonical": "#34498a",
+        "tonalRamp": [
+          "#151d38",
+          "#23315d",
+          "#314582",
+          "#3f58a7",
+          "#5872c0",
+          "#889bd2",
+          "#bcc6e6",
+          "#eceff8"
+        ]
+      },
+      "text-white": {
+        "role": "neutral",
+        "displayName": "White",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "#262626",
+          "#404040",
+          "#595959",
+          "#737373",
+          "#8c8c8c",
+          "#adadad",
+          "#d1d1d1",
+          "#f2f2f2"
+        ]
+      },
+      "text-steel": {
+        "role": "neutral",
+        "displayName": "Steel",
+        "canonical": "#c9d3f0",
+        "tonalRamp": [
+          "#111c3c",
+          "#1c2e64",
+          "#27418c",
+          "#3253b4",
+          "#4b6dcd",
+          "#7f97dc",
+          "#b7c4eb",
+          "#ebeff9"
+        ]
+      },
+      "text-muted": {
+        "role": "neutral",
+        "displayName": "Muted Steel",
+        "canonical": "#93a0c8",
+        "tonalRamp": [
+          "#1a2033",
+          "#2b3554",
+          "#3c4a76",
+          "#4d6098",
+          "#6779b2",
+          "#93a0c8",
+          "#c2c9e0",
+          "#eef0f6"
+        ]
+      },
+      "broadcast-red": {
+        "role": "secondary",
+        "displayName": "Broadcast Red",
+        "canonical": "#d8232a",
+        "tonalRamp": [
+          "#420b0d",
+          "#6e1215",
+          "#9a191e",
+          "#c52026",
+          "#df3a40",
+          "#e87377",
+          "#f2b0b3",
+          "#fbe9ea"
+        ]
+      },
+      "bar-ink": {
+        "role": "secondary",
+        "displayName": "Bar Ink",
+        "canonical": "#ffe2e2",
+        "tonalRamp": [
+          "#4c0000",
+          "#800000",
+          "#b20000",
+          "#e60000",
+          "#ff1a1a",
+          "#ff5c5c",
+          "#ffa3a3",
+          "#ffe5e5"
+        ]
+      },
+      "score-gold": {
         "role": "primary",
-        "displayName": "Masthead Accent",
-        "canonical": "#e6603a",
+        "displayName": "Score Gold",
+        "canonical": "#ffc629",
         "tonalRamp": [
-          "#431609",
-          "#7d2a11",
-          "#b33c19",
-          "#e15228",
-          "#e97d5e",
-          "#f0a994",
-          "#f6cdc0",
-          "#fcede9"
+          "#4c3800",
+          "#805e00",
+          "#b28300",
+          "#e6a800",
+          "#ffc21a",
+          "#ffd45c",
+          "#ffe7a3",
+          "#fff8e5"
         ]
       },
-      "masthead-accent-hover": {
+      "score-gold-hover": {
         "role": "primary",
-        "displayName": "Masthead Accent Hover",
-        "canonical": "#ec7a58",
+        "displayName": "Score Gold Hover",
+        "canonical": "#ffd45c",
         "tonalRamp": [
-          "#451507",
-          "#82280d",
-          "#b93913",
-          "#e84e21",
-          "#ee7a58",
-          "#f4a790",
-          "#f8cbbe",
-          "#fdede8"
+          "#4c3800",
+          "#805e00",
+          "#b28300",
+          "#e6a900",
+          "#ffc21a",
+          "#ffd45c",
+          "#ffe7a3",
+          "#fff8e5"
         ]
       },
-      "accent-ink": {
-        "role": "primary",
-        "displayName": "Accent Ink",
-        "canonical": "#17110b",
+      "pos-green": {
+        "role": "tertiary",
+        "displayName": "Signal Green",
+        "canonical": "#3ee07f",
         "tonalRamp": [
-          "#342619",
-          "#61472e",
-          "#8a6642",
-          "#b08559",
-          "#c4a383",
-          "#d7c2ac",
-          "#e8dbcf",
-          "#f7f2ee"
+          "#0b4221",
+          "#126e37",
+          "#199a4c",
+          "#20c662",
+          "#39df7c",
+          "#72e8a2",
+          "#b0f2cb",
+          "#e9fbf0"
         ]
       },
-      "wire-ground": {
-        "role": "neutral",
-        "displayName": "Wire Ground",
-        "canonical": "#1a1816",
+      "neg-red": {
+        "role": "tertiary",
+        "displayName": "Signal Red",
+        "canonical": "#ff5a55",
         "tonalRamp": [
-          "#2a2723",
-          "#4e4941",
-          "#6f695d",
-          "#8f887a",
-          "#aba69b",
-          "#c7c4bd",
-          "#dedcd8",
-          "#f3f3f1"
+          "#4c0200",
+          "#800400",
+          "#b20500",
+          "#e60700",
+          "#ff201a",
+          "#ff615c",
+          "#ffa6a3",
+          "#ffe6e5"
         ]
       },
-      "raised-panel": {
-        "role": "neutral",
-        "displayName": "Raised Panel",
-        "canonical": "#211e1a",
+      "info-blue": {
+        "role": "tertiary",
+        "displayName": "Tier Blue",
+        "canonical": "#6fb4ff",
         "tonalRamp": [
-          "#2a2722",
-          "#4f4940",
-          "#70685c",
-          "#918778",
-          "#ada59a",
-          "#c8c3bc",
-          "#dfdcd8",
-          "#f4f3f1"
-        ]
-      },
-      "inset-well": {
-        "role": "neutral",
-        "displayName": "Inset Well",
-        "canonical": "#131110",
-        "tonalRamp": [
-          "#2a2623",
-          "#4e4741",
-          "#6f665d",
-          "#908579",
-          "#aca39b",
-          "#c7c2bc",
-          "#dfdbd8",
-          "#f3f2f1"
-        ]
-      },
-      "agate-ink": {
-        "role": "neutral",
-        "displayName": "Agate Ink",
-        "canonical": "#ddd6c8",
-        "tonalRamp": [
-          "#332c19",
-          "#60512f",
-          "#897443",
-          "#af955a",
-          "#c3b084",
-          "#d7caad",
-          "#e8e0cf",
-          "#f7f4ee"
-        ]
-      },
-      "ink-secondary": {
-        "role": "neutral",
-        "displayName": "Ink Secondary",
-        "canonical": "#b8ad98",
-        "tonalRamp": [
-          "#2d291f",
-          "#544c3a",
-          "#796d53",
-          "#9b8c6e",
-          "#b4a992",
-          "#cdc6b7",
-          "#e2ded5",
-          "#f5f3f0"
-        ]
-      },
-      "ink-muted": {
-        "role": "neutral",
-        "displayName": "Ink Muted",
-        "canonical": "#96896f",
-        "tonalRamp": [
-          "#2b2822",
-          "#504a3f",
-          "#726a5a",
-          "#938a76",
-          "#aea798",
-          "#c9c4ba",
-          "#e0ddd7",
-          "#f4f3f1"
-        ]
-      },
-      "hairline-rule": {
-        "role": "neutral",
-        "displayName": "Hairline Rule",
-        "canonical": "#3a352c",
-        "tonalRamp": [
-          "#2b2821",
-          "#514a3e",
-          "#746a58",
-          "#958974",
-          "#b0a797",
-          "#cac4b9",
-          "#e0ddd6",
-          "#f4f3f0"
-        ]
-      },
-      "hairline-strong": {
-        "role": "neutral",
-        "displayName": "Hairline Strong",
-        "canonical": "#57503f",
-        "tonalRamp": [
-          "#2c2920",
-          "#534c3c",
-          "#766d56",
-          "#988d71",
-          "#b2a995",
-          "#ccc6b8",
-          "#e1ded6",
-          "#f4f3f0"
-        ]
-      },
-      "wire-green": {
-        "role": "secondary",
-        "displayName": "Wire Green (hit/goblin)",
-        "canonical": "#6f9a5d",
-        "tonalRamp": [
-          "#22301d",
-          "#405936",
-          "#5c7f4d",
-          "#78a366",
-          "#9aba8d",
-          "#bcd1b3",
-          "#d8e4d2",
-          "#f1f5ef"
-        ]
-      },
-      "wire-green-well": {
-        "role": "secondary",
-        "displayName": "Wire Green Well",
-        "canonical": "#161c12",
-        "tonalRamp": [
-          "#252f1e",
-          "#445738",
-          "#627c50",
-          "#7f9f6a",
-          "#9fb78f",
-          "#bfcfb4",
-          "#dae3d4",
-          "#f2f5ef"
-        ]
-      },
-      "crimson-flag": {
-        "role": "secondary",
-        "displayName": "Crimson Flag (miss/demon)",
-        "canonical": "#d66080",
-        "tonalRamp": [
-          "#3d101c",
-          "#721d34",
-          "#a22a4a",
-          "#cd3c64",
-          "#d96d8a",
-          "#e69eb1",
-          "#f0c6d2",
-          "#faebef"
-        ]
-      },
-      "crimson-well": {
-        "role": "secondary",
-        "displayName": "Crimson Well",
-        "canonical": "#1f1015",
-        "tonalRamp": [
-          "#321a22",
-          "#5e3140",
-          "#87455b",
-          "#ac5e78",
-          "#c08699",
-          "#d5aebb",
-          "#e7d0d8",
-          "#f6eef1"
-        ]
-      },
-      "brass-warning": {
-        "role": "secondary",
-        "displayName": "Brass Warning (B-tier/estimate)",
-        "canonical": "#b3853f",
-        "tonalRamp": [
-          "#392a14",
-          "#6a4e25",
-          "#977035",
-          "#bf914a",
-          "#cfac77",
-          "#dfc8a4",
-          "#ecdfca",
-          "#f8f4ec"
-        ]
-      },
-      "brass-well": {
-        "role": "secondary",
-        "displayName": "Brass Warning Well",
-        "canonical": "#201a10",
-        "tonalRamp": [
-          "#33291a",
-          "#5f4d30",
-          "#886e44",
-          "#ad8f5c",
-          "#c2ab85",
-          "#d6c7ad",
-          "#e7decf",
-          "#f6f3ee"
+          "#00254c",
+          "#003d80",
+          "#0056b2",
+          "#006ee6",
+          "#1a87ff",
+          "#5caaff",
+          "#a3cfff",
+          "#e5f2ff"
         ]
       }
     },
+    "colorTints": [
+      {
+        "name": "accent-bg",
+        "value": "rgba(255, 198, 41, 0.14)",
+        "purpose": "Gold tint for secondary gold labels and toggles."
+      },
+      {
+        "name": "pos-bg",
+        "value": "rgba(62, 224, 127, 0.14)",
+        "purpose": "Goblin / More tint."
+      },
+      {
+        "name": "neg-bg",
+        "value": "rgba(255, 90, 85, 0.16)",
+        "purpose": "Demon / Less / error tint."
+      },
+      {
+        "name": "info-bg",
+        "value": "rgba(111, 180, 255, 0.14)",
+        "purpose": "Tier-blue tint."
+      },
+      {
+        "name": "scrim",
+        "value": "rgba(0, 0, 0, 0.5)",
+        "purpose": "Dims the page behind the open bottom sheet; tapping it closes the sheet."
+      },
+      {
+        "name": "bar-well",
+        "value": "rgba(0, 0, 0, 0.25)",
+        "purpose": "Recessed well on the red bar for view keys and the sheet toggle."
+      }
+    ],
     "typographyMeta": {
-      "display": {
-        "displayName": "Bevan Display",
-        "purpose": "Brand mark only ('Pick'/'King')."
+      "wordmark": {
+        "displayName": "Wordmark",
+        "purpose": "PICKKING on the red bar; italic, uppercase, KING in gold."
+      },
+      "display-figure": {
+        "displayName": "Line Figure",
+        "purpose": "The prop line; the loudest element in a board row."
+      },
+      "grade": {
+        "displayName": "Grade",
+        "purpose": "Letter inside the slanted score-bug tag."
       },
       "headline": {
-        "displayName": "Small-Caps Headline",
-        "purpose": "Column headers (Goblins/Regular/Demons) and section labels rendered in genuine small-caps."
+        "displayName": "Player Name",
+        "purpose": "Board player names, uppercase."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Game-strip matchup (800) and italic TICKET (900)."
+      },
+      "label-display": {
+        "displayName": "Display Label",
+        "purpose": "Gold column heads and Scan/Track view keys, uppercase, 0.06em tracking."
       },
       "body": {
-        "displayName": "IBM Plex Mono Body",
-        "purpose": "All reading text and every stat/odds/margin value, so number columns align."
+        "displayName": "Body",
+        "purpose": "All readable text and controls, Barlow."
+      },
+      "body-sm": {
+        "displayName": "Body Small",
+        "purpose": "Secondary text, markets, notes."
       },
       "label": {
-        "displayName": "Tracked Label",
-        "purpose": "Field labels, stat labels, dividers -- small-caps, tracked, sized above the 0.75rem accessibility floor."
+        "displayName": "Label",
+        "purpose": "Sentence-case badges, tags and Details toggles."
+      },
+      "mono-debug": {
+        "displayName": "Debug Mono",
+        "purpose": "Raw-JSON debug panel only; deliberate exception."
       }
     },
-    "shadows": [],
-    "motion": [
+    "shadows": [
       {
-        "name": "control-transition",
-        "value": "120ms ease (border/background/color)",
-        "purpose": "Hover/focus state changes on inputs, buttons, and rows."
+        "name": "float",
+        "value": "0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.35)",
+        "purpose": "Entry card and auth card only."
       },
       {
-        "name": "press-transition",
-        "value": "80ms ease transform: translateY(1px)",
-        "purpose": "Button active/press feedback."
+        "name": "picked-rule",
+        "value": "inset 0 -3px 0 #ffc629",
+        "purpose": "Gold underline rule on a picked board row."
+      },
+      {
+        "name": "focus-ring",
+        "value": "0 0 0 3px rgba(255, 198, 41, 0.14)",
+        "purpose": "Input/select focus, with a gold border."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease",
+        "value": "cubic-bezier(0.2, 0.8, 0.2, 1)",
+        "purpose": "All transitions."
+      },
+      {
+        "name": "fade",
+        "value": "120-160ms",
+        "purpose": "Background, border and color changes on hover/state."
+      },
+      {
+        "name": "press",
+        "value": "80ms scale(0.98)",
+        "purpose": "Button active."
+      },
+      {
+        "name": "count-pop",
+        "value": "220ms scale 0.7 -> 1.12 -> 1",
+        "purpose": "Ticket count when a leg is added."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "prefers-reduced-motion: reduce",
+        "purpose": "Removes transitions and animations; spinner slows to 1.4s."
       }
     ],
     "breakpoints": [
       {
-        "name": "md",
-        "value": "900px"
+        "name": "sheet",
+        "value": "1024px",
+        "purpose": "Single column; entry card becomes a bottom sheet."
       },
       {
-        "name": "sm",
-        "value": "640px"
+        "name": "row-reflow",
+        "value": "720px",
+        "purpose": "Column heads hide; rows reflow to two lines; view keys go full width."
       },
       {
-        "name": "xs",
-        "value": "480px"
+        "name": "setup-stack",
+        "value": "640px",
+        "purpose": "Setup form stacks."
+      }
+    ],
+    "skew": [
+      {
+        "name": "grade",
+        "value": "skewX(-10deg)"
+      },
+      {
+        "name": "count-and-sport-tag",
+        "value": "skewX(-12deg)"
       }
     ]
   },
@@ -311,102 +426,131 @@
       "name": "Primary Button",
       "kind": "button",
       "refersTo": "button-primary",
-      "description": "Filled-accent primary action; base `button` style inherited by 'Scan whole slate' and 'Log parlay'.",
-      "html": "<button class=\"ds-btn-primary\">Scan whole slate for this date</button>",
-      "css": ".ds-btn-primary { background: #e2572e; color: #17110b; border: 1px solid #e2572e; padding: 0.75rem 1.4rem; font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 0.82rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; cursor: pointer; transition: background 120ms ease, transform 80ms ease; } .ds-btn-primary:hover { background: #ec6b45; border-color: #ec6b45; } .ds-btn-primary:active { transform: translateY(1px); } .ds-btn-primary:focus-visible { outline: 2px solid #e2572e; outline-offset: 2px; }"
+      "description": "Gold commit/pick action with navy ink.",
+      "html": "<button class=\"ds-btn-primary\">Scan slate</button>",
+      "css": ".ds-btn-primary { background: #ffc629; color: #0a1330; border: 1px solid #ffc629; border-radius: 2px; padding: 0.65rem 1.2rem; font-family: 'Barlow', system-ui, sans-serif; font-size: 1rem; font-weight: 700; cursor: pointer; transition: background-color 160ms cubic-bezier(0.2, 0.8, 0.2, 1), transform 80ms cubic-bezier(0.2, 0.8, 0.2, 1); } .ds-btn-primary:hover { background: #ffd45c; border-color: #ffd45c; } .ds-btn-primary:active { transform: scale(0.98); } .ds-btn-primary:focus-visible { outline: 2px solid #ffc629; outline-offset: 2px; }"
     },
     {
-      "name": "Ghost Button",
+      "name": "Log Entry Button",
       "kind": "button",
-      "refersTo": "button-ghost",
-      "description": "Secondary toolbar action (browse/check-results/clear).",
-      "html": "<button class=\"ds-btn-ghost\">Check results for logged picks</button>",
-      "css": ".ds-btn-ghost { background: transparent; border: 1px solid #57503f; color: #b3a891; font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 0.78rem; font-weight: 600; letter-spacing: 0.03em; padding: 0.5rem 0.95rem; cursor: pointer; transition: background 120ms ease, color 120ms ease, border-color 120ms ease; } .ds-btn-ghost:hover { background: #0c0b0a; color: #ece6d8; border-color: #e2572e; } .ds-btn-ghost:focus-visible { outline: 2px solid #e2572e; outline-offset: 2px; }"
+      "refersTo": "button-log-entry",
+      "description": "The ticket's full-width commit, in display caps.",
+      "html": "<button class=\"ds-btn-log\">Log this entry</button>",
+      "css": ".ds-btn-log { width: 100%; background: #ffc629; color: #0a1330; border: 1px solid #ffc629; border-radius: 2px; padding: 0.8rem 1.2rem; font-family: 'Big Shoulders Display', 'Barlow', sans-serif; text-transform: uppercase; font-size: 1.3rem; font-weight: 900; letter-spacing: 0.04em; cursor: pointer; transition: background-color 160ms cubic-bezier(0.2, 0.8, 0.2, 1); } .ds-btn-log:hover { background: #ffd45c; } .ds-btn-log:active { transform: scale(0.98); } .ds-btn-log:focus-visible { outline: 2px solid #ffc629; outline-offset: 2px; }"
     },
     {
-      "name": "Tier Grade Box (S)",
-      "kind": "custom",
-      "refersTo": "tier-chip-s",
-      "description": "Signature component: tier signal as a bordered stamp, not a colored pill. S-tier variant shown; A/B/C swap border+text color, below/unknown/no-data swap border-style.",
-      "html": "<span class=\"ds-tier-chip ds-tier-s\">S</span>",
-      "css": ".ds-tier-chip { display: inline-block; font-family: Bevan, Georgia, serif; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.02em; padding: 0.12rem 0.5rem; border: 1px solid #57503f; color: #b3a891; text-align: center; min-width: 1.6em; } .ds-tier-s { border-color: #6f9a5d; color: #6f9a5d; background: #161c12; }"
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Navy surface button for non-commit actions.",
+      "html": "<button class=\"ds-btn-secondary\">Check context (AI)</button>",
+      "css": ".ds-btn-secondary { background: #101c42; color: #fff; border: 1px solid #34498a; border-radius: 2px; padding: 0.5rem 0.9rem; font-family: 'Barlow', system-ui, sans-serif; font-size: 0.875rem; font-weight: 700; cursor: pointer; transition: background-color 160ms cubic-bezier(0.2, 0.8, 0.2, 1), border-color 160ms cubic-bezier(0.2, 0.8, 0.2, 1); } .ds-btn-secondary:hover { background: #15245a; border-color: #93a0c8; } .ds-btn-secondary:focus-visible { outline: 2px solid #ffc629; outline-offset: 2px; }"
     },
     {
-      "name": "Wire-Service Badge",
-      "kind": "custom",
-      "refersTo": null,
-      "description": "Bracketed status tag drawn with CSS-generated content instead of an icon or emoji, e.g. [EST +2pt], [CALIB], [CONFLICT].",
-      "html": "<span class=\"ds-badge ds-badge-est\">EST +2pt</span>",
-      "css": ".ds-badge { display: inline-block; font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 0.76rem; font-weight: 600; letter-spacing: 0.01em; padding: 0.1rem 0.15rem; border: 1px solid currentColor; } .ds-badge::before { content: '['; } .ds-badge::after { content: ']'; } .ds-badge-est { color: #b3853f; }"
-    },
-    {
-      "name": "Text Input",
+      "name": "Input and Select",
       "kind": "input",
-      "refersTo": null,
-      "description": "Date/text field: inset well background, hairline-strong border, no radius.",
-      "html": "<input type=\"text\" class=\"ds-input\" placeholder=\"Search legs\" />",
-      "css": ".ds-input { width: 100%; padding: 0.65rem 0.8rem; border: 1px solid #57503f; background: #0c0b0a; color: #ece6d8; font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 0.88rem; transition: border-color 120ms ease; } .ds-input:hover { border-color: #8f8570; } .ds-input:focus-visible { outline: none; border-color: #e2572e; }"
+      "refersTo": "input",
+      "description": "Navy field, gold caret and focus, authored chevron on selects.",
+      "html": "<div class=\"ds-field\"><input class=\"ds-input\" placeholder=\"Search player or stat\"><select class=\"ds-input ds-select\"><option>Power</option><option>Flex</option></select></div>",
+      "css": ".ds-field { display: grid; gap: 0.6rem; max-width: 320px; } .ds-input { width: 100%; padding: 0.6rem 0.8rem; border: 1px solid #34498a; border-radius: 2px; background: #101c42; color: #fff; font-family: 'Barlow', system-ui, sans-serif; font-size: 1rem; caret-color: #ffc629; transition: border-color 160ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 160ms cubic-bezier(0.2, 0.8, 0.2, 1); } .ds-input::placeholder { color: #93a0c8; } .ds-input:hover { border-color: #93a0c8; } .ds-input:focus { outline: none; border-color: #ffc629; box-shadow: 0 0 0 3px rgba(255, 198, 41, 0.14); } .ds-select { appearance: none; -webkit-appearance: none; padding-right: 2.2rem; cursor: pointer; background: #101c42 url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5l3 3 3-3' fill='none' stroke='%2393a0c8' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E\") no-repeat right 0.75rem center / 12px; }"
     },
     {
-      "name": "Section Tab",
+      "name": "Header Bar",
       "kind": "nav",
-      "refersTo": null,
-      "description": "Entry-builder tab: muted by default, 2px accent underline when active.",
-      "html": "<button class=\"ds-tab ds-tab-active\">Power (4)</button>",
-      "css": ".ds-tab { background: transparent; border: none; border-bottom: 2px solid transparent; padding: 0.55rem 1rem; font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 0.82rem; color: #8f8570; cursor: pointer; margin-bottom: -1px; } .ds-tab-active { border-bottom-color: #e2572e; color: #ece6d8; }"
+      "refersTo": "header-bar",
+      "description": "Red broadcast bar with 4px gold rule, italic wordmark and gold-keyed view switch.",
+      "html": "<header class=\"ds-bar\"><span class=\"ds-mark\">Pick<span>King</span></span><nav class=\"ds-keys\"><button class=\"ds-key ds-key-on\">Scan &amp; Build</button><button class=\"ds-key\">Track &amp; Calibrate</button></nav></header>",
+      "css": ".ds-bar { display: flex; align-items: center; gap: 1.5rem; min-height: 4rem; padding: 0 1.25rem; background: #d8232a; border-bottom: 4px solid #ffc629; } .ds-mark { font-family: 'Big Shoulders Display', 'Barlow', sans-serif; text-transform: uppercase; font-weight: 900; font-style: italic; font-size: 2rem; letter-spacing: 0.01em; color: #fff; line-height: 1; } .ds-mark span { color: #ffc629; } .ds-keys { display: flex; gap: 2px; padding: 3px; background: rgba(0, 0, 0, 0.25); border-radius: 2px; } .ds-key { background: transparent; border: none; padding: 0.45rem 1rem; border-radius: 2px; color: #ffe2e2; font-family: 'Big Shoulders Display', 'Barlow', sans-serif; text-transform: uppercase; font-weight: 800; font-size: 1rem; letter-spacing: 0.06em; cursor: pointer; transition: color 160ms cubic-bezier(0.2, 0.8, 0.2, 1), background-color 160ms cubic-bezier(0.2, 0.8, 0.2, 1); } .ds-key:hover { color: #fff; } .ds-key-on, .ds-key-on:hover { background: #ffc629; color: #0a1330; } .ds-key:focus-visible { outline: 2px solid #ffc629; outline-offset: 2px; }"
     },
     {
-      "name": "Small-Caps Column Header",
+      "name": "Grade Tags",
+      "kind": "chip",
+      "refersTo": "grade-tag-s",
+      "description": "Slanted score-bug grade tags: S green, A gold, B blue; C neutral.",
+      "html": "<div class=\"ds-grades\"><span class=\"ds-grade ds-s\">S</span><span class=\"ds-grade ds-a\">A</span><span class=\"ds-grade ds-b\">B</span><span class=\"ds-grade\">C</span></div>",
+      "css": ".ds-grades { display: flex; gap: 0.6rem; } .ds-grade { display: flex; align-items: center; justify-content: center; width: 2.4rem; height: 2.4rem; border-radius: 2px; transform: skewX(-10deg); font-family: 'Big Shoulders Display', 'Barlow', sans-serif; font-size: 1.5rem; font-weight: 900; background: #17275a; color: #c9d3f0; } .ds-s { background: #3ee07f; color: #0a1330; } .ds-a { background: #ffc629; color: #0a1330; } .ds-b { background: #6fb4ff; color: #0a1330; }"
+    },
+    {
+      "name": "Board Row",
       "kind": "custom",
-      "refersTo": null,
-      "description": "Results-column header: display face, genuine small-caps on mixed-case text, 3px double rule.",
-      "html": "<div class=\"ds-column-header\">Regular</div>",
-      "css": ".ds-column-header { font-family: Bevan, Georgia, serif; font-weight: 700; font-size: 1.15rem; font-variant: small-caps; letter-spacing: 0.02em; color: #e2572e; margin-bottom: 0.5rem; padding-bottom: 0.5rem; border-bottom: 3px double #57503f; }"
+      "refersTo": "board-row",
+      "description": "Red-ruled board with gold column heads; picked row lifts to navy with a gold inset rule; square gold check with SVG tick.",
+      "html": "<div class=\"ds-board\"><div class=\"ds-cols\"><span>Grade</span><span>Leg</span><span>Line</span></div><div class=\"ds-row ds-picked\"><span class=\"ds-g\">S</span><span class=\"ds-who\"><input type=\"checkbox\" class=\"ds-check\" checked aria-label=\"Pick\"><span><b>A'ja Wilson</b><small>Points</small></span></span><span class=\"ds-line\"><em>More</em> 24.5</span></div><div class=\"ds-row\"><span class=\"ds-g ds-gb\">B</span><span class=\"ds-who\"><input type=\"checkbox\" class=\"ds-check\" aria-label=\"Pick\"><span><b>Kelsey Plum</b><small>Points</small></span></span><span class=\"ds-line\"><em class=\"ds-less\">Less</em> 19.5</span></div></div>",
+      "css": ".ds-board { background: #101c42; border-top: 4px solid #d8232a; border-radius: 3px; overflow: hidden; color: #fff; font-family: 'Barlow', system-ui, sans-serif; } .ds-cols, .ds-row { display: grid; grid-template-columns: 2.4rem 1fr 8rem; column-gap: 0.9rem; align-items: center; padding: 0.6rem 1rem; } .ds-cols { background: #0d1838; color: #ffc629; font-family: 'Big Shoulders Display', 'Barlow', sans-serif; text-transform: uppercase; font-size: 0.95rem; font-weight: 700; letter-spacing: 0.06em; } .ds-row { padding: 0.75rem 1rem; border-top: 1px solid #22346b; cursor: pointer; transition: background-color 140ms cubic-bezier(0.2, 0.8, 0.2, 1); } .ds-row:hover { background: #15245a; } .ds-picked, .ds-picked:hover { background: #1b2a63; box-shadow: inset 0 -3px 0 #ffc629; } .ds-g { display: flex; align-items: center; justify-content: center; width: 2.4rem; height: 2.4rem; border-radius: 2px; transform: skewX(-10deg); background: #3ee07f; color: #0a1330; font-family: 'Big Shoulders Display', sans-serif; font-weight: 900; font-size: 1.5rem; } .ds-gb { background: #6fb4ff; } .ds-who { display: flex; gap: 0.65rem; align-items: flex-start; } .ds-who b { display: block; font-family: 'Big Shoulders Display', 'Barlow', sans-serif; text-transform: uppercase; font-size: 1.45rem; font-weight: 800; letter-spacing: 0.01em; line-height: 1.05; } .ds-who small { color: #c9d3f0; font-size: 0.875rem; } .ds-check { appearance: none; -webkit-appearance: none; flex-shrink: 0; width: 1.25rem; height: 1.25rem; margin: 0.1rem 0 0; border: 2px solid #34498a; border-radius: 2px; background: transparent; cursor: pointer; transition: background-color 140ms cubic-bezier(0.2, 0.8, 0.2, 1), border-color 140ms cubic-bezier(0.2, 0.8, 0.2, 1); } .ds-check:hover { border-color: #ffc629; } .ds-check:checked { border-color: #ffc629; background: #ffc629 url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.3l2.3 2.3L9.6 3.8' fill='none' stroke='%230a1330' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E\") center / 75% no-repeat; } .ds-check:focus-visible { outline: 2px solid #ffc629; outline-offset: 2px; } .ds-line { font-family: 'Big Shoulders Display', sans-serif; font-size: 1.9rem; font-weight: 900; white-space: nowrap; font-variant-numeric: tabular-nums; } .ds-line em { font-style: normal; font-family: 'Barlow', sans-serif; font-size: 0.875rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.02em; color: #3ee07f; } .ds-line .ds-less { color: #ff5a55; }"
+    },
+    {
+      "name": "Entry Card",
+      "kind": "card",
+      "refersTo": "ticket-head",
+      "description": "Red-headed ticket with gold top rule, italic TICKET, slanted gold count and float shadow; a bottom sheet with grab handle and scrim at 1024px and below.",
+      "html": "<aside class=\"ds-ticket\"><div class=\"ds-thead\"><span class=\"ds-ttitle\">Ticket</span><span class=\"ds-tcount\">3</span><span class=\"ds-tsum\">clears 55.0%</span></div><div class=\"ds-tbody\"><div class=\"ds-need\">3-pick Power needs <b>55.0%</b> per leg. Your legs average <b class=\"ds-ok\">66.0%</b>.</div><button class=\"ds-tlog\">Log this entry</button></div></aside>",
+      "css": ".ds-ticket { max-width: 360px; background: #101c42; border-top: 4px solid #ffc629; border-radius: 3px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.35); color: #fff; font-family: 'Barlow', system-ui, sans-serif; overflow: hidden; } .ds-thead { display: flex; align-items: center; gap: 0.6rem; padding: 0.9rem 1.1rem; background: #d8232a; } .ds-ttitle { font-family: 'Big Shoulders Display', 'Barlow', sans-serif; text-transform: uppercase; font-size: 1.5rem; font-weight: 900; font-style: italic; } .ds-tcount { display: inline-flex; align-items: center; justify-content: center; min-width: 1.6rem; height: 1.6rem; padding: 0 0.4rem; border-radius: 2px; background: #ffc629; color: #0a1330; font-size: 0.875rem; font-weight: 800; transform: skewX(-12deg); } .ds-tsum { margin-left: auto; font-size: 0.875rem; font-weight: 600; } .ds-tbody { padding: 0.9rem 1.1rem 1.1rem; } .ds-need { padding: 0.7rem 0.85rem; background: #17275a; border-radius: 2px; font-size: 0.875rem; color: #c9d3f0; } .ds-need b { color: #fff; } .ds-need .ds-ok { color: #3ee07f; } .ds-tlog { width: 100%; margin-top: 0.9rem; padding: 0.8rem 1.2rem; background: #ffc629; color: #0a1330; border: none; border-radius: 2px; font-family: 'Big Shoulders Display', 'Barlow', sans-serif; text-transform: uppercase; font-size: 1.3rem; font-weight: 900; letter-spacing: 0.04em; cursor: pointer; transition: background-color 160ms cubic-bezier(0.2, 0.8, 0.2, 1); } .ds-tlog:hover { background: #ffd45c; } .ds-tlog:focus-visible { outline: 2px solid #ffc629; outline-offset: 2px; }"
+    },
+    {
+      "name": "Badges",
+      "kind": "chip",
+      "refersTo": "badge",
+      "description": "Sentence-case status labels on tints.",
+      "html": "<div class=\"ds-badges\"><span class=\"ds-badge ds-gold\">Assumed 1.4x <a href=\"#\">Fix</a></span><span class=\"ds-badge\">Single book</span><span class=\"ds-badge ds-bad\">Verify type in app</span></div>",
+      "css": ".ds-badges { display: flex; gap: 0.4rem; flex-wrap: wrap; } .ds-badge { display: inline-block; font-family: 'Barlow', sans-serif; font-size: 0.78rem; font-weight: 700; color: #c9d3f0; background: #17275a; padding: 0.05rem 0.45rem; border-radius: 2px; } .ds-gold { color: #ffc629; background: rgba(255, 198, 41, 0.14); } .ds-gold a { color: #ffc629; margin-left: 0.3rem; text-underline-offset: 3px; } .ds-gold a:hover { color: #ffd45c; } .ds-bad { color: #ff5a55; background: rgba(255, 90, 85, 0.16); }"
     }
   ],
   "narrative": {
-    "northStar": "The Press-Room Ledger",
-    "overview": "PickKing reads as a reported agate box score, not a betting-app dashboard. The category default it explicitly refuses is neon/gradient sportsbook chrome, including the product's own prior look (a generic dark-elevated-card dashboard with a gold accent). In its place: a near-black newsprint ground, hairline column rules, a condensed slab-serif for headlines, a monospace numeral face for every stat so figures column up like a stat table, and small-caps tracked labels standing in for section heads. A leg is a line in a ledger; grading is a stamped grade box, not a gamified chip. This is a code-led build: no comp exists, so every value below is read directly from the shipped static/style.css and templates/page.html, not from the original direction contract's aspirations. Two disciplines named in that contract were deliberately not built and are not part of this system: LED-style lit/unlit state dots for 'live vs. stale' data, and a brief live-tile flip on a value that 'just moved.' Both assumed a live-polling/streaming data model; PickKing is a one-shot scan-and-render flow with no such state to indicate, so building either would have invented an affordance for a state that doesn't exist.",
+    "northStar": "The Score Bug",
+    "overview": "PickKing's board reads like a game broadcast's on-screen graphics. A deep navy field sits under a red header bar ruled in gold. Names and lines are set in big condensed uppercase type, and grades are slanted tags like the score bugs in a broadcast corner. The personality lives in type and color, not in costume: no LED boards, no betting-slip receipts, and none of the rounded-pastel app defaults. Everything stays legible across dozens of rows.\n\nThe system is dark only. It has no light theme and the stylesheet declares `color-scheme: dark`. The rows are dense, and each one reads left to right like a stat graphic: grade tag, big name, big line, then the margin on a shared axis. Gold is the only color that asks for action. Red frames the broadcast chrome. Green and red carry meaning only where the data is directional.",
     "keyCharacteristics": [
-      "Near-black \"wire\" ground with off-white ink and exactly one spot-color accent, used for primary actions and the masthead rule only.",
-      "Flat rectangles everywhere: no radius, no shadow, no gradient (one narrow, functional exception -- see Shapes).",
-      "Genuine small-caps (not uppercase text-transform) on every section label, tracked and tight.",
-      "A condensed slab-serif carries headlines and matchup titles; a monospace face carries every number and every line of body text.",
-      "Tier grade renders as a bordered inset box color-coded by tier, never a tinted card or colored pill."
+      "Navy field and navy surfaces, with a red bar and gold rules as the chrome.",
+      "Big Shoulders Display, 800 to 900 weight and uppercase, for everything the eye scans. Barlow for everything it reads.",
+      "Slanted score-bug tags (skewX -10deg) for grades and the entry count.",
+      "Near-square corners (2 to 3px) everywhere.",
+      "Gold is the one action color: picks, commits, the active view key."
     ],
     "rules": [
       {
-        "name": "The One Spot-Color Rule",
-        "body": "The masthead accent is the only saturated color used for action and emphasis; status signal (hit/miss/caution) is carried by the separate green/crimson/brass triad, never by the accent.",
+        "name": "The One Gold Rule",
+        "body": "Gold means \"act here\": pick, commit, or the current view. A new action gets gold. A decoration never does.",
         "section": "colors"
       },
       {
-        "name": "The Contrast-Is-Canonical Rule",
-        "body": "--accent, --danger, --warning, and --text-muted were each re-picked mid-build specifically to clear 4.5:1 contrast against --bg. Any future adjustment to these tokens must re-verify against that floor.",
+        "name": "The Earned Color Rule",
+        "body": "Green and red appear only for More/Less, goblin/demon, margin and pass/fail math, and blue appears only for Tier B. A status that has no direction stays in steel or neutral navy.",
         "section": "colors"
       },
       {
-        "name": "The Genuine Small-Caps Rule",
-        "body": "Section and stat labels use font-variant: small-caps on real mixed-case source text, never text-transform: uppercase.",
+        "name": "The Red Is Chrome Rule",
+        "body": "Broadcast Red frames the page (the bar, the ticket head, the board's top rule and the sport tag). It never marks a data value. Data negatives use Signal Red.",
+        "section": "colors"
+      },
+      {
+        "name": "The Scan/Read Split Rule",
+        "body": "Display type is reserved for what the eye scans across rows: marks, names, lines, grades and heads. Anything a person reads as a sentence or a control label stays in Barlow.",
         "section": "typography"
       },
       {
-        "name": "The No-Shadow Rule",
-        "body": "Nothing in this system casts a shadow or uses a gradient. Depth comes from the raised/inset tonal pair and rule weight only.",
+        "name": "The Loud Line Rule",
+        "body": "In a board row, the line figure is the largest type. The player name comes second. Everything else steps down to Barlow.",
+        "section": "typography"
+      },
+      {
+        "name": "The Rules Not Shadows Rule",
+        "body": "Hierarchy is marked with 4px color rules: gold under the header bar, red on top of the board, gold on top of the entry card. Only the floating card casts a shadow.",
         "section": "elevation"
       }
     ],
     "dos": [
-      "Do keep every number in the monospace face (--font) so stat/odds columns stay aligned; never substitute a proportional face for a value column.",
-      "Do use genuine font-variant: small-caps on real mixed-case text for section/stat labels -- not text-transform: uppercase.",
-      "Do render tier as a bordered grade-box keyed to the status triad (wire-green / accent / brass-warning / neutral), never as a filled colored pill or a tinted row background.",
-      "Do keep the masthead's 5px double accent rule and the results columns' 3px double header rule as the system's only two \"heavy rule\" moments -- they read as a print convention specifically because they're rare."
+      "**Do** use gold (score-gold) with navy ink for every commit or pick action, and for nothing decorative.",
+      "**Do** set scanned content (names, lines, grades, heads) in Big Shoulders Display 800 to 900, uppercase, and keep sentences in Barlow.",
+      "**Do** make the line figure the largest type in any row that shows a prop.",
+      "**Do** slant score-bug tags (skewX -10deg for grades, -12deg for counts and sport tags) and keep corners at 2 to 3px.",
+      "**Do** mark structure with 4px color rules (gold under red chrome, red over the board) rather than with shadows.",
+      "**Do** use `var(--*)` tokens from `static/style.css` `:root`, since that block is the source of truth."
     ],
     "donts": [
-      "Don't use emoji, icon fonts, or glyph icon sets anywhere in this system -- the sport <select> previously carried basketball/baseball/football emoji and they were removed as a craft-floor violation; badges draw their own CSS-generated brackets instead.",
-      "Don't add radius, shadow, or gradient to any surface -- the one permitted exception is the circular loading spinner, and it exists only because a spinner must be round.",
-      "Don't invent a live/stale state indicator (lit/unlit dots) or a \"value just changed\" flip animation for this app. Both were raised in the original direction contract and intentionally not built: PickKing's render is a one-shot scan/re-render, not a live data stream.",
-      "Don't give a secondary/outlined treatment to a primary call-to-action button; primary actions always inherit the base filled-accent button style."
+      "**Don't** add a light theme or light surfaces. The system is dark only.",
+      "**Don't** use green or red for anything but More/Less, goblin/demon, margin and pass/fail, and don't use Broadcast Red for data.",
+      "**Don't** use metaphor costumes (LED line boards, betting-slip receipts) or generic app defaults (rounded pastel pills, violet accents). This is a PRODUCT.md brand commitment.",
+      "**Don't** set body copy, badges or form labels in the display face. Small uppercase Barlow labels (More/Less, table heads) are fine.",
+      "**Don't** round corners past 3px. The loading spinner is the only circle."
     ]
   }
 }

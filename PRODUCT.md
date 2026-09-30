@@ -47,6 +47,10 @@ Three things a neighboring "odds comparison" tool doesn't do:
 - Real per-request data: live PropLine odds, a hand-verified goblin/demon multiplier table (`goblin_demon_calibration.json`), and the user's own logged pick history in their tracking workbook once populated.
 - No fabricated testimonials, benchmarks, or user counts exist or should be invented — this is presently a single-user tool with no external proof points to show.
 
+## Brand Commitments
+
+- Character through type and color, not theme costume (user preference, 2026-09-27). Two concept looks (an LED line board and a betting-slip receipt) were rejected as gimmicky and hard to read. A clean generic pick'em-app look was then rejected as "AI generated" with no character. The user chose a sports-broadcast look: navy/red/gold, big condensed display type for names and lines, a readable body face, and slanted score-bug grade tags. Future visual work keeps personality in typography and color, stays readable over dozens of rows, and avoids metaphor costumes and generic app defaults (rounded pastel pills, violet accents).
+
 ## Product Principles
 
 1. Grading must stay market-derived and auditable — never blend qualitative or AI-sourced signals into the actual scoring numbers.

@@ -4,8 +4,13 @@ import datetime
 import json
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 
 from scoring import MARKETS_BY_SPORT, BASKETBALL_MARKETS, extract_raw_all_books, build_report, row_sort_key
+
+# How many games a slate scan fetches at once. Kept low to stay polite with
+# PropLine's rate limit -- lower it if slate scans start getting 429s.
+SLATE_FETCH_WORKERS = 5
 
 
 def api_get(path, api_key, extra_params=None):
@@ -95,12 +100,20 @@ def scan_slate(sport_key, date_str, api_key, bar, include_raw=True):
     skipped_games = []
     any_prizepicks_board = False
 
-    for event in matching:
-        matchup = f"{event['away_team']} @ {event['home_team']}"
+    def fetch(event):
         try:
-            full_event = fetch_props(sport_key, event["id"], api_key, markets)
+            return fetch_props(sport_key, event["id"], api_key, markets), None
         except Exception as e:
-            skipped_games.append(f"{matchup} ({type(e).__name__})")
+            return None, e
+
+    # Network fetches run in parallel; everything after stays sequential, in slate order.
+    with ThreadPoolExecutor(max_workers=SLATE_FETCH_WORKERS) as pool:
+        fetched = list(pool.map(fetch, matching))
+
+    for event, (full_event, err) in zip(matching, fetched):
+        matchup = f"{event['away_team']} @ {event['home_team']}"
+        if err is not None:
+            skipped_games.append(f"{matchup} ({type(err).__name__})")
             continue
 
         if include_raw:
