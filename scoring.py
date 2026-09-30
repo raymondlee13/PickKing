@@ -49,6 +49,12 @@ WIDE_MARKETS_MAX_GAP = {
     "player_reception_yds": 5.0,
 }
 DEFAULT_MAX_GAP = 0.0  # exact match only, unless whitelisted above
+# Ceiling on any threshold-ladder probability. Ladder prices are one-sided
+# (no Under to de-vig against), so the vig stays in and inflates the
+# near-certain end -- a -5000 "2+ rebounds" reads as 98% it isn't.
+# ponytail: flat cap; swap for a real one-sided de-vig once the report's
+# THRESHOLD_LADDER rows show where ladders actually land.
+LADDER_MAX_PROB = 0.92
 
 BASKETBALL_MARKETS = ["player_points", "player_rebounds", "player_assists",
                        "player_points_rebounds_assists", "player_threes",
@@ -294,23 +300,39 @@ def extract_threshold_ladder(event, player, market_key):
     return ladder
 
 
+def ladder_extrapolated(ladder, target_point):
+    """True when target_point's threshold sits outside the ladder's published
+    rungs -- the estimate there is a bound/projection, not a priced number."""
+    if not ladder or target_point is None:
+        return False
+    return not (ladder[0][0] <= target_point + 0.5 <= ladder[-1][0])
+
+
 def estimate_probability_from_ladder(ladder, target_point):
-    """Log-linear interpolate/extrapolate a threshold ladder (see
-    extract_threshold_ladder) to estimate the probability of clearing an
-    Over-style point -- e.g. Over 39.5 needs the stat to reach 40, so this
-    looks up (or blends between) the ladder's nearest "40+"-style entries.
-    Returns None if the ladder is empty or target_point is unknown.
+    """Log-linear interpolate a threshold ladder (see extract_threshold_ladder)
+    to estimate the probability of clearing an Over-style point -- e.g. Over
+    39.5 needs the stat to reach 40, so this looks up (or blends between) the
+    ladder's nearest "40+"-style entries. Returns None if the ladder is empty,
+    target_point is unknown, or the ladder can't say anything about it.
+
+    Outside the published rungs there's no price, only a bound, and projecting
+    past the curve's end is what produced 98-100% goblins that went 1-for-2:
+      - below the lowest rung: P(reach needed) >= P(reach lowest rung), so use
+        that rung's probability as-is -- a conservative floor, never a projection up.
+      - above the highest rung: project down off the top two rungs (never
+        above the top rung's probability); a single rung says nothing -> None.
+    Everything is capped at LADDER_MAX_PROB, since these prices still carry
+    their one-sided vig, which inflates exactly the near-certain end.
     """
     if not ladder or target_point is None:
         return None
     needed = target_point + 0.5
 
-    if len(ladder) == 1:
-        return ladder[0][1]
-
     if needed <= ladder[0][0]:
-        (t0, p0), (t1, p1) = ladder[0], ladder[1]
-    elif needed >= ladder[-1][0]:
+        return min(ladder[0][1], LADDER_MAX_PROB)
+    if len(ladder) == 1:
+        return None
+    if needed >= ladder[-1][0]:
         (t0, p0), (t1, p1) = ladder[-2], ladder[-1]
     else:
         t0, p0 = ladder[0]
@@ -320,10 +342,12 @@ def estimate_probability_from_ladder(ladder, target_point):
             t0, p0 = t1, p1
 
     if t1 == t0 or p0 <= 0 or p1 <= 0:
-        return p0
+        return min(p0, LADDER_MAX_PROB)
     frac = (needed - t0) / (t1 - t0)
     log_p = math.log(p0) + frac * (math.log(p1) - math.log(p0))
-    return min(max(math.exp(log_p), 0.0001), 0.9999)
+    if needed > ladder[-1][0]:
+        log_p = min(log_p, math.log(ladder[-1][1]))
+    return min(max(math.exp(log_p), 0.0001), LADDER_MAX_PROB)
 
 
 def poisson_binomial_dist(probs):
@@ -581,6 +605,7 @@ def _grade_leg(event, leg, bar):
         "tier": tier, "estimated": any_estimate, "gap": round(max_gap, 1),
         "deviation": deviation, "assumed_multiplier": round(assumed_multiplier, 2) if assumed_multiplier else None,
         "estimate_type": estimate_type, "whole_number": whole_number,
+        "ladder_extrapolated": from_ladder is not None and ladder_extrapolated(ladder, leg["point"]),
         "book_point": book_point, "over_price": over_price, "under_price": under_price,
     }
 

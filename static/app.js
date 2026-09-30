@@ -198,6 +198,10 @@ function checkClv() {
 // split into two different checks instead of one blended "hit rate by
 // tier" number (tier isn't comparable across leg types since goblin/demon
 // bars vary per leg while standard/discount bars are flat).
+function ciText(ci) {
+    return ci ? ci[0].toFixed(0) + '&ndash;' + ci[1].toFixed(0) + '%' : '';
+}
+
 function viewCalibrationReport() {
     var area = document.getElementById('calibration-report-area');
     area.innerHTML = '<div class="raw-data-panel">' + spinnerHtml('Loading...') + '</div>';
@@ -221,13 +225,14 @@ function viewCalibrationReport() {
                 + ' (0 = perfect calibration, 0.25 = no better than a coin flip)</div>';
 
             html += '<div class="section-label" style="margin-top:0.8rem;">Standard/Discount picks by Tier</div>';
-            html += '<div class="meta">Bar is flat for these, so tier ordering is a real, uncounfounded hit-rate check.</div>';
+            html += '<div class="meta">Bar is flat for these, so tier ordering is a real, unconfounded hit-rate check.</div>';
             if (d.fixed_bar_by_tier.length === 0) {
                 html += '<div class="game-list-msg">No graded standard/discount picks yet.</div>';
             } else {
-                html += '<table><tr><th>Tier</th><th>N</th><th>Hit Rate</th></tr>';
+                html += '<table><tr><th>Tier</th><th>N</th><th>Hit Rate</th><th>Likely range</th></tr>';
                 d.fixed_bar_by_tier.forEach(function(row) {
-                    html += '<tr><td>' + row.tier + '</td><td>' + row.n + '</td><td>' + (row.hit_rate * 100).toFixed(1) + '%</td></tr>';
+                    html += '<tr><td>' + row.tier + '</td><td>' + row.n + '</td><td>' + (row.hit_rate * 100).toFixed(1)
+                        + '%</td><td>' + ciText(row.ci) + '</td></tr>';
                 });
                 html += '</table>';
             }
@@ -239,13 +244,54 @@ function viewCalibrationReport() {
             if (d.variable_bar_calibration.length === 0) {
                 html += '<div class="game-list-msg">No graded goblin/demon picks yet.</div>';
             } else {
-                html += '<table><tr><th>Predicted range</th><th>N</th><th>Avg Predicted</th><th>Actual Hit Rate</th></tr>';
+                html += '<table><tr><th>Predicted range</th><th>N</th><th>Avg Predicted</th><th>Actual Hit Rate</th><th>Likely range</th></tr>';
                 d.variable_bar_calibration.forEach(function(row) {
                     html += '<tr><td>' + row.bucket + '</td><td>' + row.n + '</td><td>' + row.avg_predicted
-                        + '%</td><td>' + row.actual_hit_rate + '%</td></tr>';
+                        + '%</td><td>' + row.actual_hit_rate + '%</td><td>' + ciText(row.ci)
+                        + (row.consistent ? '' : ' &middot; <strong>off</strong>') + '</td></tr>';
                 });
                 html += '</table>';
             }
+
+            html += '<div class="section-label" style="margin-top:0.8rem;">Closing line value by Tier</div>';
+            html += '<div class="meta">How often the line moved your way by kickoff. Needs no W/L, so it firms up '
+                + 'faster than hit rate. Consistently above 50% means the edges are real.</div>';
+            if (!d.clv_by_tier || d.clv_by_tier.length === 0) {
+                html += '<div class="game-list-msg">No CLV checked yet -- run "Check CLV" after games start.</div>';
+            } else {
+                html += '<table><tr><th>Tier</th><th>N</th><th>Moved your way</th><th>Likely range</th></tr>';
+                d.clv_by_tier.forEach(function(row) {
+                    html += '<tr><td>' + row.tier + '</td><td>' + row.n + '</td><td>' + row.clv_rate
+                        + '%</td><td>' + ciText(row.ci) + '</td></tr>';
+                });
+                html += '</table>';
+            }
+            var e = d.entries;
+            html += '<div class="section-label" style="margin-top:0.8rem;">Real entries: actual vs. modelled return</div>';
+            html += '<div class="meta">Per 1 unit staked. Above 1.0 = profit. The model is only worth trusting '
+                + 'if "Actual" tracks "Modelled" over many entries. A handful of entries is mostly luck.</div>';
+            if (!e || e.settled === 0) {
+                html += '<div class="game-list-msg">No settled entries yet'
+                    + (e && e.pending ? ' (' + e.pending + ' waiting on results)' : '') + '.</div>';
+            } else {
+                html += '<table><tr><th>Settled</th><th>Cashed</th><th>Modelled</th><th>Actual</th>'
+                    + (e.total_staked ? '<th>Staked</th><th>Net</th>' : '') + '</tr><tr><td>' + e.settled
+                    + '</td><td>' + e.cashed + '</td><td>' + (e.avg_modelled_ev != null ? e.avg_modelled_ev.toFixed(2) + 'x' : 'N/A')
+                    + '</td><td>' + e.avg_actual_return.toFixed(2) + 'x</td>'
+                    + (e.total_staked ? '<td>$' + e.total_staked.toFixed(2) + '</td><td>' + (e.total_net >= 0 ? '+' : '-')
+                        + '$' + Math.abs(e.total_net).toFixed(2) + '</td>' : '') + '</tr></table>';
+                if (e.pending || e.manual) {
+                    html += '<div class="meta">' + (e.pending ? e.pending + ' still waiting on results. ' : '')
+                        + (e.manual ? e.manual + ' had a pushed leg. Fill in their Result in the Entry Log by hand.' : '') + '</div>';
+                }
+                if (!e.total_staked) {
+                    html += '<div class="meta">Enter each entry\'s Stake in the Entry Log to see dollars too.</div>';
+                }
+            }
+
+            html += '<div class="meta" style="margin-top:0.6rem;">Likely range = 95% Wilson interval: where the true rate '
+                + 'plausibly sits given the sample so far. A wide range means not enough picks yet to tell. '
+                + '"off" = the predicted % falls outside it, so that bucket looks miscalibrated, not just unlucky.</div>';
             html += '</div>';
             area.innerHTML = html;
         })
@@ -420,7 +466,8 @@ function secondaryBadgesForRow(r) {
     var b = '';
     if (r._boosted) b += '<span class="badge badge-calib">' + profitBoostPct + '% boost applied</span>';
     if (r.estimate_type === 'THRESHOLD_LADDER') {
-        b += '<span class="badge badge-est">Ladder estimate · single book, no de-vig</span>';
+        b += '<span class="badge badge-est">Ladder estimate · single book, no de-vig'
+            + (r.ladder_extrapolated ? ' · beyond published rungs' : '') + '</span>';
     } else if (r.estimated) {
         b += '<span class="badge badge-est">EST +' + r.gap + 'pt</span>';
     }

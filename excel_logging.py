@@ -1,6 +1,7 @@
 """Spreadsheet logging -- appends scanned/selected legs to the tracking workbook."""
 
 import os
+import re
 
 from result_grading import build_tag, check_clv, check_result, parse_tag
 from scoring import poisson_binomial_dist
@@ -22,9 +23,147 @@ STAT_ABBREV = {
     "batter_stolen_bases": "SB", "batter_total_bases": "TB",
     "pitcher_strikeouts": "K", "pitcher_hits_allowed": "H ALLOWED",
     "pitcher_walks": "BB", "pitcher_outs": "OUTS",
+    "player_pass_yds": "PASS YDS", "player_pass_tds": "PASS TD", "player_pass_completions": "COMP",
+    "player_pass_attempts": "PASS ATT", "player_pass_interceptions": "INT", "player_rush_yds": "RUSH YDS",
+    "player_rush_attempts": "RUSH ATT", "player_receptions": "REC", "player_reception_yds": "REC YDS",
+    "player_pass_rush_reception_yds": "PASS+RUSH+REC YDS", "player_kicking_points": "KICK PTS",
+    "player_field_goals": "FG MADE", "player_anytime_td": "ANY TD",
 }
 LINE_TYPE_MAP = {"standard": "STD", "goblin": "GOBLIN", "demon": "DEMON"}
 TIER_CODE_MAP = {"TIER S": "S", "TIER A": "A", "TIER B": "B", "TIER C": "C", "BELOW BAR": "BELOW BAR"}
+
+# The Leg Log's column layout. Every read/write here (and in the two report
+# modules) is positional, so open_workbook refuses a sheet whose header row
+# doesn't match -- a column inserted by hand in Excel would otherwise make
+# every later write land in the wrong column silently.
+LEG_LOG_HEADERS = [
+    "Date", "Entry ID", "Entry Type", "Multiplier", "Player", "Game", "Stat", "Side", "PP Line", "Whole #?",
+    "Line Type", "Book Line", "Book Over", "Book Under", "Predicted True %", "Estimate Type", "Bar",
+    "Margin (pts)", "Tier", "Actual Value", "Result", "Hit", "Brier", "CLV Favorable?", "Notes",
+]
+COL = {h: i + 1 for i, h in enumerate(LEG_LOG_HEADERS)}  # header -> 1-based column number
+ENTRY_LOG_HEADERS = ["Date", "Entry ID", "Type", "Multiplier", "# Legs", "Modelled EV", "Stake",
+                     "Result (W/L/Partial)", "Return", "Net", "Notes"]
+ENTRY_COL = {h: i + 1 for i, h in enumerate(ENTRY_LOG_HEADERS)}
+# Flex payouts for 1/2 misses, stashed in an Entry Log row's Notes at logging
+# time so settle_entries can pay a Partial out correctly later.
+_FLEX_TAG_RE = re.compile(r"\[pkflex:1miss=([\d.]*),2miss=([\d.]*)\]")
+OPENPYXL_MISSING = ("openpyxl isn't installed. In Command Prompt run: pip install openpyxl "
+                    "--break-system-packages , then restart the app.")
+
+
+def open_workbook(workbook_path, need_entry_log=False):
+    """(workbook, None) ready to use, or (None, user-facing error message)."""
+    if not OPENPYXL_AVAILABLE:
+        return None, OPENPYXL_MISSING
+    if not workbook_path:
+        return None, "No tracking workbook path set. Add \"tracking_workbook_path\" in config.json."
+    if not os.path.exists(workbook_path):
+        return None, f"Workbook not found at: {workbook_path}. Check the path in config.json."
+    try:
+        wb = openpyxl.load_workbook(workbook_path)
+    except PermissionError:
+        return None, "Couldn't open the workbook -- close it in Excel first, then try again."
+    except Exception as e:
+        return None, f"Couldn't open workbook: {type(e).__name__}: {e}"
+    if "Leg Log" not in wb.sheetnames or (need_entry_log and "Entry Log" not in wb.sheetnames):
+        return None, "Workbook is missing its 'Leg Log'/'Entry Log' sheets -- wrong file?"
+    layouts = [("Leg Log", LEG_LOG_HEADERS)]
+    if "Entry Log" in wb.sheetnames:
+        layouts.append(("Entry Log", ENTRY_LOG_HEADERS))
+    for sheet, expected in layouts:
+        headers = [wb[sheet].cell(row=1, column=c).value for c in range(1, len(expected) + 1)]
+        if headers != expected:
+            bad = next(i for i, (a, b) in enumerate(zip(headers, expected)) if a != b)
+            return None, (f"{sheet} column {bad + 1} is '{headers[bad]}', expected '{expected[bad]}'. "
+                          "Were columns added or moved in Excel? Put them back so picks aren't written "
+                          "to the wrong column.")
+    return wb, None
+
+
+def _pick_key(where, player, line, side):
+    return where + (player, float(line) if isinstance(line, (int, float)) else line, str(side or "").upper())
+
+
+def leg_key(leg_log, r):
+    """What makes a Leg Log row the same pick as another: same game + market
+    (from its [pk:...] tag), player, line and side. The same leg logged twice --
+    tracking-only, then again inside a real entry -- shares a key, so reports
+    can count it once."""
+    tag = parse_tag(leg_log.cell(row=r, column=COL["Notes"]).value)
+    where = ((tag["event_id"], tag["market"]) if tag else
+             (leg_log.cell(row=r, column=COL["Date"]).value, leg_log.cell(row=r, column=COL["Stat"]).value))
+    return _pick_key(where, leg_log.cell(row=r, column=COL["Player"]).value,
+                     leg_log.cell(row=r, column=COL["PP Line"]).value, leg_log.cell(row=r, column=COL["Side"]).value)
+
+
+def _payout_multiple(entry_type, multiplier, notes, misses):
+    """Payout per 1 unit staked for an entry with this many missed legs."""
+    if misses == 0:
+        return multiplier
+    if "flex" in str(entry_type).lower():
+        m = _FLEX_TAG_RE.search(notes or "")
+        tiers = {1: m.group(1), 2: m.group(2)} if m else {}
+        return float(tiers.get(misses) or 0)
+    return 0.0
+
+
+def entry_outcomes(wb):
+    """Every Entry Log row, worked out from its legs' W/L in the Leg Log:
+    [{row, entry_id, modelled_ev, stake, status, result, payout}] where status is
+      "settled" -- every leg W/L; result W/Partial/L, payout = return per 1 unit staked
+      "pending" -- some leg still has no result
+      "manual"  -- a leg pushed; PrizePicks re-prices the entry at the smaller
+                   size, which this doesn't model, so fill that one in by hand
+    """
+    leg_log, entry_log = wb["Leg Log"], wb["Entry Log"]
+    results = {}
+    r = 2
+    while leg_log.cell(row=r, column=COL["Player"]).value not in (None, ""):
+        eid = leg_log.cell(row=r, column=COL["Entry ID"]).value
+        if isinstance(eid, str) and eid.startswith("E"):
+            results.setdefault(eid, []).append(leg_log.cell(row=r, column=COL["Result"]).value)
+        r += 1
+
+    outcomes = []
+    r = 2
+    while entry_log.cell(row=r, column=ENTRY_COL["Entry ID"]).value not in (None, ""):
+        row = {h: entry_log.cell(row=r, column=c).value for h, c in ENTRY_COL.items()}
+        legs = results.get(row["Entry ID"], [])
+        out = {"row": r, "entry_id": row["Entry ID"], "modelled_ev": row["Modelled EV"],
+               "stake": row["Stake"] if isinstance(row["Stake"], (int, float)) else None,
+               "status": "pending", "result": None, "payout": None}
+        if "PUSH" in legs:
+            out["status"] = "manual"
+        elif legs and all(x in ("W", "L") for x in legs):
+            payout = _payout_multiple(row["Type"], float(row["Multiplier"] or 0), row["Notes"], legs.count("L"))
+            if "L" not in legs:
+                result = "W"
+            else:
+                result = "Partial" if payout > 0 else "L"
+            out.update(status="settled", payout=payout, result=result)
+        outcomes.append(out)
+        r += 1
+    return outcomes
+
+
+def settle_entries(wb):
+    """Fill Result (and Return, when a Stake is entered) for every Entry Log
+    row whose legs are all graded and whose Result is still blank. Net is the
+    sheet's own formula. Returns (settled, needs_manual)."""
+    entry_log = wb["Entry Log"]
+    settled = manual = 0
+    for o in entry_outcomes(wb):
+        if entry_log.cell(row=o["row"], column=ENTRY_COL["Result (W/L/Partial)"]).value not in (None, ""):
+            continue  # already settled, or filled in by hand
+        if o["status"] == "manual":
+            manual += 1
+        elif o["status"] == "settled":
+            entry_log.cell(row=o["row"], column=ENTRY_COL["Result (W/L/Partial)"], value=o["result"])
+            if o["stake"] is not None:
+                entry_log.cell(row=o["row"], column=ENTRY_COL["Return"], value=round(o["stake"] * o["payout"], 2))
+            settled += 1
+    return settled, manual
 
 
 def log_parlay_to_excel(workbook_path, legs, multiplier, entry_type_label, date_str,
@@ -40,22 +179,9 @@ def log_parlay_to_excel(workbook_path, legs, multiplier, entry_type_label, date_
     before this existed), it falls back to the old all-or-nothing formula.
     Returns (success, message, entry_id).
     """
-    if not OPENPYXL_AVAILABLE:
-        return False, "openpyxl isn't installed. In Command Prompt run: pip install openpyxl --break-system-packages , then restart the app.", None
-    if not workbook_path:
-        return False, "No tracking workbook path set. Add \"tracking_workbook_path\" in config.json.", None
-    if not os.path.exists(workbook_path):
-        return False, f"Workbook not found at: {workbook_path}. Check the path in config.json.", None
-
-    try:
-        wb = openpyxl.load_workbook(workbook_path)
-    except PermissionError:
-        return False, "Couldn't open the workbook -- close it in Excel first, then try again.", None
-    except Exception as e:
-        return False, f"Couldn't open workbook: {type(e).__name__}: {e}", None
-
-    if "Leg Log" not in wb.sheetnames or "Entry Log" not in wb.sheetnames:
-        return False, "Workbook doesn't have 'Leg Log' and 'Entry Log' sheets -- wrong file?", None
+    wb, error = open_workbook(workbook_path, need_entry_log=True)
+    if error:
+        return False, error, None
 
     leg_log = wb["Leg Log"]
     entry_log = wb["Entry Log"]
@@ -77,7 +203,7 @@ def log_parlay_to_excel(workbook_path, legs, multiplier, entry_type_label, date_
     # in order (reusing their existing formulas) instead of skipping past all
     # of them and starting a fresh block far below.
     next_row = 2
-    while leg_log.cell(row=next_row, column=5).value not in (None, ""):  # column E = Player
+    while leg_log.cell(row=next_row, column=COL["Player"]).value not in (None, ""):
         next_row += 1
     legs_written = 0
 
@@ -140,8 +266,11 @@ def log_parlay_to_excel(workbook_path, legs, multiplier, entry_type_label, date_
     while entry_log.cell(row=next_entry_row, column=2).value not in (None, ""):  # column B = Entry ID
         next_entry_row += 1
     entry_row = next_entry_row
+    entry_note = "Logged via Edge Finder app."
+    if is_flex:
+        entry_note += f" [pkflex:1miss={one_miss_multiplier or ''},2miss={two_miss_multiplier or ''}]"
     entry_values = [date_str, entry_id, entry_type_label, multiplier, legs_written,
-                     modelled_ev, None, None, None, None, "Logged via Edge Finder app."]
+                     modelled_ev, None, None, None, None, entry_note]
     for col, val in enumerate(entry_values, start=1):
         entry_log.cell(row=entry_row, column=col, value=val)
     entry_log.cell(row=entry_row, column=4).number_format = '0.0\\x'
@@ -168,22 +297,9 @@ def log_legs_for_tracking(workbook_path, legs, date_str):
     visually distinguishable from real placed entries in the spreadsheet.
     Returns (success, message).
     """
-    if not OPENPYXL_AVAILABLE:
-        return False, "openpyxl isn't installed. In Command Prompt run: pip install openpyxl --break-system-packages , then restart the app."
-    if not workbook_path:
-        return False, "No tracking workbook path set. Add \"tracking_workbook_path\" in config.json."
-    if not os.path.exists(workbook_path):
-        return False, f"Workbook not found at: {workbook_path}. Check the path in config.json."
-
-    try:
-        wb = openpyxl.load_workbook(workbook_path)
-    except PermissionError:
-        return False, "Couldn't open the workbook -- close it in Excel first, then try again."
-    except Exception as e:
-        return False, f"Couldn't open workbook: {type(e).__name__}: {e}"
-
-    if "Leg Log" not in wb.sheetnames:
-        return False, "Workbook doesn't have a 'Leg Log' sheet -- wrong file?"
+    wb, error = open_workbook(workbook_path)
+    if error:
+        return False, error
 
     leg_log = wb["Leg Log"]
 
@@ -194,12 +310,24 @@ def log_legs_for_tracking(workbook_path, legs, date_str):
             existing_ids.add(int(eid[1:]))
     next_id_num = (max(existing_ids) + 1) if existing_ids else 1
 
+    # Tracking-only rows exist just to measure the model, so a pick already in
+    # the Leg Log (from any earlier log) would only be counted twice -- skip it.
+    # log_parlay_to_excel doesn't skip: a real entry needs every one of its legs
+    # to settle, and the reports de-duplicate by leg_key instead.
+    seen = set()
     next_row = 2
-    while leg_log.cell(row=next_row, column=5).value not in (None, ""):  # column E = Player
+    while leg_log.cell(row=next_row, column=COL["Player"]).value not in (None, ""):
+        seen.add(leg_key(leg_log, next_row))
         next_row += 1
-    legs_written = 0
+    legs_written = skipped = 0
 
     for leg in legs:
+        key = _pick_key((str(leg.get("event_id", "")), leg.get("market", "")),
+                        leg.get("player", ""), leg.get("point"), leg.get("side"))
+        if key in seen:
+            skipped += 1
+            continue
+        seen.add(key)
         stat = STAT_ABBREV.get(leg.get("market", ""), leg.get("market", "").upper())
         line_type = LINE_TYPE_MAP.get(leg.get("dfs_type", "standard"), "STD")
         true_pct = leg.get("consensus_pct", 0) / 100.0
@@ -240,6 +368,10 @@ def log_legs_for_tracking(workbook_path, legs, date_str):
         next_row += 1
         legs_written += 1
 
+    skipped_note = f" Skipped {skipped} already in the log." if skipped else ""
+    if not legs_written:
+        return True, f"Nothing new to log.{skipped_note}"
+
     try:
         wb.save(workbook_path)
     except PermissionError:
@@ -247,7 +379,7 @@ def log_legs_for_tracking(workbook_path, legs, date_str):
     except Exception as e:
         return False, f"Couldn't save workbook: {type(e).__name__}: {e}"
 
-    return True, f"Logged {legs_written} leg(s) for tracking (no multiplier -- fill in Result later)."
+    return True, f"Logged {legs_written} leg(s) for tracking (no multiplier -- fill in Result later).{skipped_note}"
 
 
 def check_and_fill_results(workbook_path, api_key):
@@ -260,22 +392,9 @@ def check_and_fill_results(workbook_path, api_key):
     report what happened rather than silently doing nothing for them.
     Returns (success, message).
     """
-    if not OPENPYXL_AVAILABLE:
-        return False, "openpyxl isn't installed. In Command Prompt run: pip install openpyxl --break-system-packages , then restart the app."
-    if not workbook_path:
-        return False, "No tracking workbook path set. Add \"tracking_workbook_path\" in config.json."
-    if not os.path.exists(workbook_path):
-        return False, f"Workbook not found at: {workbook_path}. Check the path in config.json."
-
-    try:
-        wb = openpyxl.load_workbook(workbook_path)
-    except PermissionError:
-        return False, "Couldn't open the workbook -- close it in Excel first, then try again."
-    except Exception as e:
-        return False, f"Couldn't open workbook: {type(e).__name__}: {e}"
-
-    if "Leg Log" not in wb.sheetnames:
-        return False, "Workbook doesn't have a 'Leg Log' sheet -- wrong file?"
+    wb, error = open_workbook(workbook_path)
+    if error:
+        return False, error
 
     leg_log = wb["Leg Log"]
     stats_cache = {}  # (sport, event_id) -> box score, shared across every row this pass
@@ -283,20 +402,20 @@ def check_and_fill_results(workbook_path, api_key):
     changed = False
 
     row = 2
-    while leg_log.cell(row=row, column=5).value not in (None, ""):  # column E = Player
-        player = leg_log.cell(row=row, column=5).value
-        if leg_log.cell(row=row, column=21).value not in (None, ""):  # column U = Result
+    while leg_log.cell(row=row, column=COL["Player"]).value not in (None, ""):
+        player = leg_log.cell(row=row, column=COL["Player"]).value
+        if leg_log.cell(row=row, column=COL["Result"]).value not in (None, ""):
             row += 1
             continue  # already graded, or filled in by hand -- leave it alone
 
-        tag = parse_tag(leg_log.cell(row=row, column=25).value)  # column Y = Note
+        tag = parse_tag(leg_log.cell(row=row, column=COL["Notes"]).value)
         if not tag:
             no_tag += 1
             row += 1
             continue
 
-        side = "More" if str(leg_log.cell(row=row, column=8).value or "").upper() == "MORE" else "Less"
-        point = leg_log.cell(row=row, column=9).value  # column I = Line
+        side = "More" if str(leg_log.cell(row=row, column=COL["Side"]).value or "").upper() == "MORE" else "Less"
+        point = leg_log.cell(row=row, column=COL["PP Line"]).value
 
         try:
             status, result, actual_value = check_result(
@@ -311,11 +430,16 @@ def check_and_fill_results(workbook_path, api_key):
         elif result is None:
             no_data += 1
         else:
-            leg_log.cell(row=row, column=20, value=actual_value)  # column T = Actual Value
-            leg_log.cell(row=row, column=21, value=result)  # column U = Result
+            leg_log.cell(row=row, column=COL["Actual Value"], value=actual_value)
+            leg_log.cell(row=row, column=COL["Result"], value=result)
             graded += 1
             changed = True
         row += 1
+
+    settled = manual = 0
+    if "Entry Log" in wb.sheetnames:
+        settled, manual = settle_entries(wb)
+        changed = changed or settled > 0
 
     if changed:
         try:
@@ -328,6 +452,10 @@ def check_and_fill_results(workbook_path, api_key):
     message = (f"Graded {graded} pick(s). {pending} still pending (game not finished yet). "
                f"{no_data} finished but couldn't match the player/stat. "
                f"{no_tag} too old to auto-check (logged before this feature existed).")
+    if settled:
+        message += f" Settled {settled} entry(s)."
+    if manual:
+        message += f" {manual} entry(s) had a pushed leg -- fill in Result by hand."
     return True, message
 
 
@@ -338,22 +466,9 @@ def check_and_fill_clv(workbook_path, api_key):
     is knowable as soon as the market closes. Uses the same [pk:...] tag in
     the Note column as check_and_fill_results. Returns (success, message).
     """
-    if not OPENPYXL_AVAILABLE:
-        return False, "openpyxl isn't installed. In Command Prompt run: pip install openpyxl --break-system-packages , then restart the app."
-    if not workbook_path:
-        return False, "No tracking workbook path set. Add \"tracking_workbook_path\" in config.json."
-    if not os.path.exists(workbook_path):
-        return False, f"Workbook not found at: {workbook_path}. Check the path in config.json."
-
-    try:
-        wb = openpyxl.load_workbook(workbook_path)
-    except PermissionError:
-        return False, "Couldn't open the workbook -- close it in Excel first, then try again."
-    except Exception as e:
-        return False, f"Couldn't open workbook: {type(e).__name__}: {e}"
-
-    if "Leg Log" not in wb.sheetnames:
-        return False, "Workbook doesn't have a 'Leg Log' sheet -- wrong file?"
+    wb, error = open_workbook(workbook_path)
+    if error:
+        return False, error
 
     leg_log = wb["Leg Log"]
     cache = {}  # (sport, event_id, "stats"|"odds", ...) -> fetched data, shared across every row this pass
@@ -361,20 +476,20 @@ def check_and_fill_clv(workbook_path, api_key):
     changed = False
 
     row = 2
-    while leg_log.cell(row=row, column=5).value not in (None, ""):  # column E = Player
-        if leg_log.cell(row=row, column=24).value not in (None, ""):  # column X = CLV Favorable?
+    while leg_log.cell(row=row, column=COL["Player"]).value not in (None, ""):
+        if leg_log.cell(row=row, column=COL["CLV Favorable?"]).value not in (None, ""):
             row += 1
             continue  # already checked, or filled in by hand -- leave it alone
 
-        tag = parse_tag(leg_log.cell(row=row, column=25).value)  # column Y = Note
+        tag = parse_tag(leg_log.cell(row=row, column=COL["Notes"]).value)
         if not tag:
             no_tag += 1
             row += 1
             continue
 
-        player = leg_log.cell(row=row, column=5).value
-        side = "More" if str(leg_log.cell(row=row, column=8).value or "").upper() == "MORE" else "Less"
-        point = leg_log.cell(row=row, column=9).value  # column I = Line
+        player = leg_log.cell(row=row, column=COL["Player"]).value
+        side = "More" if str(leg_log.cell(row=row, column=COL["Side"]).value or "").upper() == "MORE" else "Less"
+        point = leg_log.cell(row=row, column=COL["PP Line"]).value
 
         try:
             status, favorable, _closing_point = check_clv(
@@ -389,7 +504,7 @@ def check_and_fill_clv(workbook_path, api_key):
         elif favorable is None:
             no_line += 1
         else:
-            leg_log.cell(row=row, column=24, value=("YES" if favorable else "NO"))  # column X
+            leg_log.cell(row=row, column=COL["CLV Favorable?"], value=("YES" if favorable else "NO"))
             checked += 1
             changed = True
         row += 1

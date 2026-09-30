@@ -26,58 +26,90 @@ Excel itself saved the file after these rows were added, which isn't
 guaranteed. Recomputing from raw inputs sidesteps that entirely.
 """
 
-import os
+import math
 
-try:
-    import openpyxl
-    OPENPYXL_AVAILABLE = True
-except ImportError:
-    OPENPYXL_AVAILABLE = False
+from excel_logging import COL, entry_outcomes, leg_key, open_workbook
 
 TIER_ORDER = ["BELOW BAR", "TIER C", "TIER B", "TIER A", "TIER S"]
+# Tier as the report shows it, from the code the workbook stores ("S" -> "TIER S").
+_TIER_FROM_CODE = {t.split()[-1]: t for t in TIER_ORDER if t.startswith("TIER")}
 
 
-def _read_graded_rows(leg_log):
-    rows = []
+def wilson_interval(hits, n, z=1.96):
+    """95% range the true hit rate plausibly sits in, given hits out of n.
+    Unlike the textbook p +/- 1.96*sqrt(p(1-p)/n), stays sensible for small n
+    and rates near 0/100% -- exactly the small-tier and goblin/demon cases here."""
+    if n == 0:
+        return None
+    p = hits / n
+    denom = 1 + z * z / n
+    center = (p + z * z / (2 * n)) / denom
+    half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / denom
+    return max(0.0, center - half), min(1.0, center + half)  # clamp float noise at 0/n and n/n
+
+
+def _ci_pct(hits, n):
+    low, high = wilson_interval(hits, n)
+    return round(low * 100, 1), round(high * 100, 1)
+
+
+def _read_rows(leg_log):
+    """Every logged leg with a W/L result or a CLV verdict -- CLV is filled at
+    kickoff, so it's often known well before (or without) a W/L. A pick logged
+    more than once (tracking-only, then inside a real entry) counts once."""
+    rows = {}
     r = 2
-    while leg_log.cell(row=r, column=5).value not in (None, ""):  # column E = Player
-        result = leg_log.cell(row=r, column=21).value  # column U = Result
-        if result in ("W", "L"):  # exclude blank/pending and PUSH -- neither is a real outcome
-            rows.append({
-                "true_pct": leg_log.cell(row=r, column=15).value,  # column O
-                "line_type": leg_log.cell(row=r, column=11).value,  # column K
-                "tier": leg_log.cell(row=r, column=19).value,  # column S
-                "hit": 1 if result == "W" else 0,
-            })
+    while leg_log.cell(row=r, column=COL["Player"]).value not in (None, ""):
+        result = leg_log.cell(row=r, column=COL["Result"]).value
+        clv = leg_log.cell(row=r, column=COL["CLV Favorable?"]).value
+        if result in ("W", "L") or clv in ("YES", "NO"):  # PUSH isn't a real outcome
+            tier = leg_log.cell(row=r, column=COL["Tier"]).value
+            row = {
+                "true_pct": leg_log.cell(row=r, column=COL["Predicted True %"]).value,
+                "line_type": leg_log.cell(row=r, column=COL["Line Type"]).value,
+                "tier": _TIER_FROM_CODE.get(tier, tier),
+                "hit": {"W": 1, "L": 0}.get(result),  # None = not graded yet
+                "clv": {"YES": 1, "NO": 0}.get(clv),
+            }
+            first = rows.setdefault(leg_key(leg_log, r), row)
+            for field in ("hit", "clv"):  # the first copy may not be graded yet
+                if first[field] is None:
+                    first[field] = row[field]
         r += 1
-    return rows
+    return list(rows.values())
+
+
+def _tier_sort_key(x):
+    return TIER_ORDER.index(x["tier"]) if x["tier"] in TIER_ORDER else -1
 
 
 def build_report(workbook_path):
     """Returns (success, message, data). data is None on failure, otherwise:
-    {total_graded, brier_score, fixed_bar_by_tier, variable_bar_calibration}
+    {total_graded, brier_score, fixed_bar_by_tier, variable_bar_calibration, clv_by_tier, entries}
+    Every hit_rate/clv_rate comes with a 95% Wilson interval (ci_low/ci_high, in %).
     """
-    if not OPENPYXL_AVAILABLE:
-        return False, "openpyxl isn't installed. In Command Prompt run: pip install openpyxl --break-system-packages , then restart the app.", None
-    if not workbook_path:
-        return False, "No tracking workbook path set. Add \"tracking_workbook_path\" in config.json.", None
-    if not os.path.exists(workbook_path):
-        return False, f"Workbook not found at: {workbook_path}. Check the path in config.json.", None
+    wb, error = open_workbook(workbook_path)
+    if error:
+        return False, error, None
 
-    try:
-        wb = openpyxl.load_workbook(workbook_path)
-    except PermissionError:
-        return False, "Couldn't open the workbook -- close it in Excel first, then try again.", None
-    except Exception as e:
-        return False, f"Couldn't open workbook: {type(e).__name__}: {e}", None
+    all_rows = _read_rows(wb["Leg Log"])
+    rows = [r for r in all_rows if r["hit"] is not None]
 
-    if "Leg Log" not in wb.sheetnames:
-        return False, "Workbook doesn't have a 'Leg Log' sheet -- wrong file?", None
+    clv_groups = {}
+    for r in all_rows:
+        if r["clv"] is not None:
+            clv_groups.setdefault(r["tier"], []).append(r["clv"])
+    clv_by_tier = [
+        {"tier": t, "n": len(v), "clv_rate": round(sum(v) / len(v) * 100, 1), "ci": _ci_pct(sum(v), len(v))}
+        for t, v in clv_groups.items()
+    ]
+    clv_by_tier.sort(key=_tier_sort_key)
+    entry_summary = _entry_summary(wb) if "Entry Log" in wb.sheetnames else None
 
-    rows = _read_graded_rows(wb["Leg Log"])
     if not rows:
         return True, "No graded picks yet (Result = W/L) -- log some picks and run \"Check results\" first.", {
             "total_graded": 0, "brier_score": None, "fixed_bar_by_tier": [], "variable_bar_calibration": [],
+            "clv_by_tier": clv_by_tier, "entries": entry_summary,
         }
 
     scored = [r for r in rows if r["true_pct"] is not None]
@@ -90,10 +122,10 @@ def build_report(workbook_path):
     for r in fixed_bar:
         by_tier.setdefault(r["tier"], []).append(r["hit"])
     fixed_bar_by_tier = [
-        {"tier": t, "n": len(hits), "hit_rate": round(sum(hits) / len(hits), 3)}
+        {"tier": t, "n": len(hits), "hit_rate": round(sum(hits) / len(hits), 3), "ci": _ci_pct(sum(hits), len(hits))}
         for t, hits in by_tier.items()
     ]
-    fixed_bar_by_tier.sort(key=lambda x: TIER_ORDER.index(x["tier"]) if x["tier"] in TIER_ORDER else -1)
+    fixed_bar_by_tier.sort(key=_tier_sort_key)
 
     buckets = {}
     for r in variable_bar:
@@ -104,12 +136,16 @@ def build_report(workbook_path):
     variable_bar_calibration = []
     for bucket in sorted(buckets):
         entries = buckets[bucket]
-        avg_predicted = sum(r["true_pct"] for r in entries) / len(entries)
-        actual_hit_rate = sum(r["hit"] for r in entries) / len(entries)
+        hits = sum(r["hit"] for r in entries)
+        avg_predicted = round(sum(r["true_pct"] for r in entries) / len(entries) * 100, 1)
+        ci = _ci_pct(hits, len(entries))
         variable_bar_calibration.append({
             "bucket": f"{bucket}-{bucket + 10}%", "n": len(entries),
-            "avg_predicted": round(avg_predicted * 100, 1),
-            "actual_hit_rate": round(actual_hit_rate * 100, 1),
+            "avg_predicted": avg_predicted,
+            "actual_hit_rate": round(hits / len(entries) * 100, 1),
+            "ci": ci,
+            # Predicted % outside the range = miscalibrated, not just unlucky.
+            "consistent": ci[0] <= avg_predicted <= ci[1],
         })
 
     data = {
@@ -117,5 +153,27 @@ def build_report(workbook_path):
         "brier_score": brier_score,
         "fixed_bar_by_tier": fixed_bar_by_tier,
         "variable_bar_calibration": variable_bar_calibration,
+        "clv_by_tier": clv_by_tier,
+        "entries": entry_summary,
     }
     return True, "OK", data
+
+
+def _entry_summary(wb):
+    """Real placed entries: what they actually paid vs. what the model said
+    they'd pay (Modelled EV), both per 1 unit staked. The honest bottom line --
+    tiers and calibration only matter if this ends up above 1.0."""
+    outcomes = entry_outcomes(wb)
+    settled = [o for o in outcomes if o["status"] == "settled"]
+    staked = [o for o in settled if o["stake"] is not None]
+    modelled = [o["modelled_ev"] for o in settled if isinstance(o["modelled_ev"], (int, float))]
+    return {
+        "settled": len(settled),
+        "pending": sum(1 for o in outcomes if o["status"] == "pending"),
+        "manual": sum(1 for o in outcomes if o["status"] == "manual"),
+        "cashed": sum(1 for o in settled if o["payout"] > 0),
+        "avg_modelled_ev": round(sum(modelled) / len(modelled), 3) if modelled else None,
+        "avg_actual_return": round(sum(o["payout"] for o in settled) / len(settled), 3) if settled else None,
+        "total_staked": round(sum(o["stake"] for o in staked), 2),
+        "total_net": round(sum(o["stake"] * (o["payout"] - 1) for o in staked), 2),
+    }

@@ -7,6 +7,7 @@ import json
 import os
 import socket
 import threading
+import time
 import unicodedata
 import urllib.error
 import urllib.parse
@@ -47,6 +48,29 @@ STATIC_FILES = {
 # workbook) take this lock to keep two writes from interleaving.
 # ponytail: one global lock, per-file locks if check_results starts blocking logging.
 WRITE_LOCK = threading.Lock()
+
+# The server listens on the whole LAN, so throttle password guessing: after
+# LOGIN_MAX_FAILURES wrong passwords from one IP inside LOGIN_WINDOW seconds,
+# refuse further attempts from it until the oldest failure ages out.
+LOGIN_MAX_FAILURES = 5
+LOGIN_WINDOW = 15 * 60
+_login_failures = {}  # ip -> [failure timestamps]
+_login_lock = threading.Lock()
+
+MAX_BODY_BYTES = 2_000_000  # far above any real request (a big entry log is a few KB)
+
+
+def _login_blocked(ip):
+    now = time.time()
+    with _login_lock:
+        recent = [t for t in _login_failures.get(ip, []) if now - t < LOGIN_WINDOW]
+        _login_failures[ip] = recent
+        return len(recent) >= LOGIN_MAX_FAILURES
+
+
+def _record_login_failure(ip):
+    with _login_lock:
+        _login_failures.setdefault(ip, []).append(time.time())
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -104,8 +128,15 @@ class Handler(BaseHTTPRequestHandler):
         return username_for_session(token) if token else None
 
     def _read_body(self):
-        length = int(self.headers.get("Content-Length", 0))
-        return self.rfile.read(length).decode("utf-8")
+        """Request body, or "" when Content-Length is missing, garbage, or huge --
+        callers already treat an empty body as a malformed/incomplete request."""
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+        except ValueError:
+            return ""
+        if not 0 < length <= MAX_BODY_BYTES:
+            return ""
+        return self.rfile.read(length).decode("utf-8", errors="replace")
 
     def _read_form(self):
         return urllib.parse.parse_qs(self._read_body())
@@ -230,11 +261,18 @@ class Handler(BaseHTTPRequestHandler):
             self._send_html("<h1>Not found</h1>", 404)
 
     def handle_login(self):
+        ip = self.client_address[0]
+        if _login_blocked(ip):
+            self._send_html(render_login('<div class="error">Too many wrong passwords. '
+                                         'Wait 15 minutes and try again.</div>'), 429)
+            return
+
         form = self._read_form()
         username = form.get("username", [""])[0]
         password = form.get("password", [""])[0]
 
         if not verify_user(username, password):
+            _record_login_failure(ip)
             self._send_html(render_login('<div class="error">Wrong username or password.</div>'))
             return
 

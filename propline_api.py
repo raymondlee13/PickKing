@@ -2,6 +2,7 @@
 
 import datetime
 import json
+import time
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -11,6 +12,12 @@ from scoring import MARKETS_BY_SPORT, BASKETBALL_MARKETS, extract_raw_all_books,
 # How many games a slate scan fetches at once. Kept low to stay polite with
 # PropLine's rate limit -- lower it if slate scans start getting 429s.
 SLATE_FETCH_WORKERS = 5
+
+# The game list is re-fetched on every sport/date change in the browser but
+# barely moves, so cache it briefly to save API quota. Odds and box scores are
+# deliberately NOT cached -- a stale price or "upcoming" status means a wrong grade.
+EVENTS_CACHE_SECONDS = 120
+_events_cache = {}  # sport_key -> (fetched_at, simplified events)
 
 
 def api_get(path, api_key, extra_params=None):
@@ -33,6 +40,9 @@ def fetch_props(sport_key, event_id, api_key, markets):
 def list_upcoming_events(sport_key, api_key):
     """Simplified list of upcoming games for the game-browser feature --
     just enough to display and click, not full odds."""
+    cached = _events_cache.get(sport_key)
+    if cached and time.time() - cached[0] < EVENTS_CACHE_SECONDS:
+        return cached[1]
     events = api_get(f"/sports/{sport_key}/events", api_key)
     simplified = []
     for e in events:
@@ -42,6 +52,7 @@ def list_upcoming_events(sport_key, api_key):
             "away_team": e.get("away_team", ""),
             "commence_time": e.get("commence_time", ""),
         })
+    _events_cache[sport_key] = (time.time(), simplified)
     return simplified
 
 

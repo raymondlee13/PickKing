@@ -20,54 +20,35 @@ for this question is just "were these two legs riding on the same game,"
 not how or when they were logged.
 """
 
-import os
-
-try:
-    import openpyxl
-    OPENPYXL_AVAILABLE = True
-except ImportError:
-    OPENPYXL_AVAILABLE = False
+from excel_logging import COL, leg_key, open_workbook
 
 
 def _read_graded_rows(leg_log):
-    rows = []
+    rows = {}  # leg_key -> row, so a pick logged twice can't pair with itself
     r = 2
-    while leg_log.cell(row=r, column=5).value not in (None, ""):  # column E = Player
-        result = leg_log.cell(row=r, column=21).value  # column U = Result
+    while leg_log.cell(row=r, column=COL["Player"]).value not in (None, ""):
+        result = leg_log.cell(row=r, column=COL["Result"]).value
         if result in ("W", "L"):  # exclude blank/pending and PUSH -- neither is a real outcome
-            rows.append({
-                "date": leg_log.cell(row=r, column=1).value,
-                "matchup": leg_log.cell(row=r, column=6).value,
-                "player": leg_log.cell(row=r, column=5).value,
-                "stat": leg_log.cell(row=r, column=7).value,
-                "point": leg_log.cell(row=r, column=9).value,
-                "side": leg_log.cell(row=r, column=8).value,
+            rows.setdefault(leg_key(leg_log, r), {
+                "date": leg_log.cell(row=r, column=COL["Date"]).value,
+                "matchup": leg_log.cell(row=r, column=COL["Game"]).value,
+                "player": leg_log.cell(row=r, column=COL["Player"]).value,
+                "stat": leg_log.cell(row=r, column=COL["Stat"]).value,
+                "point": leg_log.cell(row=r, column=COL["PP Line"]).value,
+                "side": leg_log.cell(row=r, column=COL["Side"]).value,
                 "hit": result == "W",
             })
         r += 1
-    return rows
+    return list(rows.values())
 
 
 def build_report(workbook_path):
     """Returns (success, message, data). data is None on failure, otherwise:
     {total_legs, overall_hit_rate, pairs, summary}
     """
-    if not OPENPYXL_AVAILABLE:
-        return False, "openpyxl isn't installed. In Command Prompt run: pip install openpyxl --break-system-packages , then restart the app.", None
-    if not workbook_path:
-        return False, "No tracking workbook path set. Add \"tracking_workbook_path\" in config.json.", None
-    if not os.path.exists(workbook_path):
-        return False, f"Workbook not found at: {workbook_path}. Check the path in config.json.", None
-
-    try:
-        wb = openpyxl.load_workbook(workbook_path)
-    except PermissionError:
-        return False, "Couldn't open the workbook -- close it in Excel first, then try again.", None
-    except Exception as e:
-        return False, f"Couldn't open workbook: {type(e).__name__}: {e}", None
-
-    if "Leg Log" not in wb.sheetnames:
-        return False, "Workbook doesn't have a 'Leg Log' sheet -- wrong file?", None
+    wb, error = open_workbook(workbook_path)
+    if error:
+        return False, error, None
 
     rows = _read_graded_rows(wb["Leg Log"])
     if not rows:

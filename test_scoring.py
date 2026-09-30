@@ -3,7 +3,7 @@
 import goblin_demon_calibration as cal
 from scoring import (
     POWER_PLAY_BARS, STANDARD_2PICK_LEG_MULTIPLIER, american_to_prob, devig_two_way,
-    estimate_probability_from_ladder, grade_leg, poisson_binomial_dist,
+    LADDER_MAX_PROB, estimate_probability_from_ladder, grade_leg, ladder_extrapolated, poisson_binomial_dist,
 )
 
 
@@ -47,6 +47,20 @@ def test_ladder_interpolation():
     ladder = [(40, 0.5), (42, 0.125)]
     assert close(estimate_probability_from_ladder(ladder, 40.5), 0.25)
     assert estimate_probability_from_ladder([], 40.5) is None
+
+
+def test_ladder_never_projects_past_its_rungs():
+    ladder = [(3, 0.80), (5, 0.40)]
+    # Goblin 1.5 needs 2 -- below the lowest rung. Old code projected this to ~100%;
+    # all we really know is P(2+) >= P(3+).
+    assert close(estimate_probability_from_ladder(ladder, 1.5), 0.80)
+    assert ladder_extrapolated(ladder, 1.5) and not ladder_extrapolated(ladder, 3.5)
+    # Above the top rung: projected down, never above the top rung itself.
+    assert estimate_probability_from_ladder(ladder, 6.5) < 0.40
+    # One rung says nothing about a higher line (5+ can't be as likely as 2+).
+    assert estimate_probability_from_ladder([(2, 0.90)], 4.5) is None
+    # Vigged near-certain prices get capped.
+    assert estimate_probability_from_ladder([(2, 0.985), (3, 0.9)], 1.5) == LADDER_MAX_PROB
 
 
 def test_goblin_demon_direction():
