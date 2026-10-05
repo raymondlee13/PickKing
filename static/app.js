@@ -2,6 +2,7 @@ var STORAGE_KEY = 'pp_edge_games';
 var ACTIVE_KEY = 'pp_edge_active';
 var SELECTED_KEY = 'pp_edge_selected';
 var VIEW_KEY = 'pp_edge_view';
+var LAST_STAKE_KEY = 'pp_edge_last_stake';
 
 // Two top-level views instead of one long scroll: scanning/building an entry
 // is a different task, done at a different time, than checking results or
@@ -1182,6 +1183,11 @@ function renderEntryBuilder() {
     var prevOneMiss = prevOneMissEl ? prevOneMissEl.value : '';
     var prevTwoMissEl = document.getElementById('entry-mult-2miss');
     var prevTwoMiss = prevTwoMissEl ? prevTwoMissEl.value : '';
+    var prevStakeEl = document.getElementById('entry-stake');
+    var prevStake = prevStakeEl ? prevStakeEl.value : '';
+    if (!prevStakeEl) {
+        try { prevStake = localStorage.getItem(LAST_STAKE_KEY) || ''; } catch (e) { /* ignore */ }
+    }
     var typeSelectEl = document.getElementById('log-entry-type');
     var isFlex = typeSelectEl ? typeSelectEl.value === 'Flex' : false;
 
@@ -1245,6 +1251,8 @@ function renderEntryBuilder() {
         + '<option value="Flex"' + (isFlex ? ' selected' : '') + '>Flex</option></select></div>'
         + '<div><label for="entry-mult">' + (isFlex ? 'All ' + n + ' pays' : 'Pays') + '</label>'
         + '<input type="number" step="0.01" min="0.01" id="entry-mult" placeholder="e.g. 6" value="' + prevMult + '" oninput="calcEntry()"></div>'
+        + '<div><label for="entry-stake">Stake $</label>'
+        + '<input type="number" step="0.01" min="0" id="entry-stake" placeholder="optional" value="' + escapeAttr(prevStake) + '"></div>'
         + '</div>'
         + flexTierFieldsHtml
         + '<div class="need-line">' + needLineHtml(n, isFlex, avgPct) + '</div>'
@@ -1355,13 +1363,22 @@ function logParlay() {
     if (isNaN(oneMissMultiplier)) oneMissMultiplier = null;
     if (isNaN(twoMissMultiplier)) twoMissMultiplier = null;
 
+    // Optional: with a stake, "Check results" fills in Return (and the sheet's Net) once every leg is graded.
+    var stakeEl = document.getElementById('entry-stake');
+    var stake = stakeEl ? parseFloat(stakeEl.value) : NaN;
+    if (!(stake > 0)) stake = null;
+    if (stake) {
+        try { localStorage.setItem(LAST_STAKE_KEY, String(stake)); } catch (e) { /* ignore */ }
+    }
+
     resultEl.innerHTML = spinnerHtml('Logging...');
     fetch('/log_parlay', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             legs: legsForLog, multiplier: m, entry_type_label: entryTypeLabel, date: today,
-            is_flex: isFlex, one_miss_multiplier: oneMissMultiplier, two_miss_multiplier: twoMissMultiplier
+            is_flex: isFlex, one_miss_multiplier: oneMissMultiplier, two_miss_multiplier: twoMissMultiplier,
+            stake: stake
         })
     })
     .then(function(resp) { return resp.json(); })

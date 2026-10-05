@@ -7,7 +7,8 @@ import tempfile
 
 from calibration_report import wilson_interval
 from excel_logging import (
-    COL, ENTRY_LOG_HEADERS, LEG_LOG_HEADERS, OPENPYXL_AVAILABLE, log_legs_for_tracking, open_workbook, settle_entries,
+    COL, ENTRY_LOG_HEADERS, LEG_LOG_HEADERS, OPENPYXL_AVAILABLE, log_legs_for_tracking, log_parlay_to_excel,
+    open_workbook, settle_entries,
 )
 from result_grading import build_tag, grade_pick, parse_tag
 
@@ -131,6 +132,25 @@ def test_tracking_log_skips_duplicates():
         assert ok and "Skipped 1" in message
         leg_log = openpyxl.load_workbook(path)["Leg Log"]
         assert [leg_log.cell(row=r, column=COL["PP Line"]).value for r in (2, 3, 4)] == [21.5, 22.5, None]
+
+
+def test_logged_stake_settles_to_return():
+    if not OPENPYXL_AVAILABLE:
+        return
+    import openpyxl
+    leg = {"player": "A'ja Wilson", "market": "player_points", "point": 21.5, "side": "More",
+           "dfs_type": "standard", "consensus_pct": 60.0, "bar": 55.0, "tier": "TIER B",
+           "books": ["fanduel"], "sport": "basketball_wnba", "event_id": "123"}
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "t.xlsx")
+        _blank_workbook(path)
+        assert log_parlay_to_excel(path, [leg, dict(leg, point=4.5)], 3.0, "2-Power", "2026-10-01", stake=5)[0]
+        wb = openpyxl.load_workbook(path)
+        for r in (2, 3):  # what "Check results" writes once both games are final
+            wb["Leg Log"].cell(row=r, column=COL["Result"], value="W")
+        assert settle_entries(wb) == (1, 0)
+        entry_log = wb["Entry Log"]
+        assert [entry_log.cell(row=2, column=c).value for c in (7, 8, 9)] == [5, "W", 15.0]  # Stake, Result, Return
 
 
 if __name__ == "__main__":

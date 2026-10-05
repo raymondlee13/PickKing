@@ -27,8 +27,8 @@ from goblin_demon_calibration import estimate_multiplier, record_correction
 from propline_api import fetch_props, list_upcoming_events, scan_slate, utc_to_local_date_str
 from scoring import (
     BASKETBALL_MARKETS, DEFAULT_BAR, MARKETS_BY_SPORT, SPORT_LABELS,
-    STANDARD_2PICK_LEG_MULTIPLIER, build_report, extract_raw_all_books, find_consensus_reference_point, grade_leg,
-    grade_manual_leg,
+    STANDARD_2PICK_LEG_MULTIPLIER, build_report, extract_pp_lines, extract_raw_all_books,
+    find_consensus_reference_point, grade_leg, grade_manual_leg,
 )
 from views import render_form, render_home, render_login, render_register, rows_to_payload
 
@@ -471,13 +471,19 @@ class Handler(BaseHTTPRequestHandler):
             two_miss_multiplier = float(two_miss_multiplier) if two_miss_multiplier is not None else None
         except (TypeError, ValueError):
             two_miss_multiplier = None
+        try:
+            stake = float(data.get("stake"))
+            stake = stake if stake > 0 else None
+        except (TypeError, ValueError):
+            stake = None  # optional -- blank just means no dollar tracking for this entry
 
         config = load_config()
         workbook_path = config.get("tracking_workbook_path", "")
 
         success, message, entry_id = log_parlay_to_excel(
             workbook_path, legs, multiplier, entry_type_label, date_str,
-            is_flex=is_flex, one_miss_multiplier=one_miss_multiplier, two_miss_multiplier=two_miss_multiplier)
+            is_flex=is_flex, one_miss_multiplier=one_miss_multiplier, two_miss_multiplier=two_miss_multiplier,
+            stake=stake)
         self._send_json({"success": success, "message": message, "entry_id": entry_id})
 
     def handle_log_tracking(self):
@@ -575,7 +581,7 @@ class Handler(BaseHTTPRequestHandler):
                 r["sport"] = sport
 
             if not rows:
-                error_html = '<div class="error">No gradeable legs found -- no overlapping book coverage for this game/market set.</div>'
+                error_html = f'<div class="error">{_no_legs_message(1, bool(extract_pp_lines(full_event)))}</div>'
                 self._send_html(render_form(sport, error_html))
                 return
 
@@ -627,13 +633,8 @@ class Handler(BaseHTTPRequestHandler):
 
             if not rows:
                 skipped_note = f" ({len(skipped_games)} game(s) failed to fetch.)" if skipped_games else ""
-                if not any_prizepicks_board:
-                    error_html = (f'<div class="error">Scanned {len(scanned_games)} game(s), but PrizePicks hasn\'t '
-                                   f'posted any picks for them yet -- they tend to post their board closer to game '
-                                   f'day than sportsbooks do. Try again nearer kickoff.{skipped_note}</div>')
-                else:
-                    error_html = (f'<div class="error">Scanned {len(scanned_games)} game(s) but found no gradeable '
-                                   f'legs -- no overlapping book coverage.{skipped_note}</div>')
+                error_html = (f'<div class="error">{_no_legs_message(len(scanned_games), any_prizepicks_board)}'
+                              f'{skipped_note}</div>')
                 self._send_html(render_form(sport, error_html))
                 return
 
@@ -665,6 +666,20 @@ class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, format, *args):
         pass  # keep the console quiet
+
+
+def _no_legs_message(n_games, any_prizepicks_board):
+    """Why a scan came back empty, worded for its two real causes. Blames the
+    odds feed, not PrizePicks: PrizePicks can have a board up that PropLine
+    doesn't carry (e.g. NBA preseason, listed under PrizePicks' own "NBAP" league)."""
+    games = "this game" if n_games == 1 else f"{n_games} games"
+    if not any_prizepicks_board:
+        return (f"Scanned {games}, but the odds feed (PropLine) has no PrizePicks lines for them. Either "
+                "PrizePicks hasn't posted yet (try nearer game time), or its board for these games isn't in "
+                "the feed. NBA preseason, listed under PrizePicks' NBAP tab, is one example.")
+    return (f"Scanned {games}. PrizePicks lines were found, but no sportsbook (DraftKings, FanDuel, etc.) "
+            "has props at those lines yet, so there's nothing to grade them against. Try again closer to "
+            "game time, when more books post.")
 
 
 def _name_key(name):

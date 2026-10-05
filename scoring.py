@@ -9,8 +9,16 @@ from collections import defaultdict
 from goblin_demon_calibration import estimate_multiplier
 
 DFS_BOOKS = {"prizepicks", "underdog", "sleeper", "dabble"}
+# Real-money books whose two-way prices feed the de-vigged consensus. Widened
+# 2026-10-05 with the other priced books PropLine carries (US books, low-vig
+# books, and the Novig/ProphetX exchanges). Deliberately left out: other
+# pick'em apps (pick6, parlayplay -- same product as PrizePicks, not a market),
+# sweepstakes/social books (fliff, rebet, sportzino, courtside), thin
+# prediction markets (kalshi, polymarket_us, smarkets), and the softest
+# offshore books (onexbet, betus).
 CONSENSUS_BOOKS = {"draftkings", "fanduel", "betmgm", "caesars", "betrivers",
-                    "pinnacle", "bovada", "unibet"}
+                    "pinnacle", "bovada", "unibet",
+                    "fanatics", "hardrock", "betway", "betonlineag", "lowvig", "novig", "prophetx"}
 
 POWER_PLAY_BARS = {2: 57.7, 3: 55.0, 4: 56.0, 5: 55.0, 6: 55.0}
 # Per-leg break-even for Flex, solved via real multi-tier EV math (see chat) --

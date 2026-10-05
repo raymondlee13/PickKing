@@ -167,7 +167,7 @@ def settle_entries(wb):
 
 
 def log_parlay_to_excel(workbook_path, legs, multiplier, entry_type_label, date_str,
-                         is_flex=False, one_miss_multiplier=None, two_miss_multiplier=None):
+                         is_flex=False, one_miss_multiplier=None, two_miss_multiplier=None, stake=None):
     """
     legs: list of dicts with player/market/point/side/dfs_type/consensus_pct/bar/margin/
           tier/whole_number/estimate_type/book_point/over_price/under_price/books/matchup/spread_pct
@@ -177,6 +177,8 @@ def log_parlay_to_excel(workbook_path, legs, multiplier, entry_type_label, date_
     hit), unlike Power's true all-or-nothing. Modelled EV only reflects that
     correctly when these are given -- without them (Power, or a Flex logged
     before this existed), it falls back to the old all-or-nothing formula.
+    stake, if given, goes in the Entry Log's Stake column so "check results"
+    can fill in Return once every leg is graded (see settle_entries).
     Returns (success, message, entry_id).
     """
     wb, error = open_workbook(workbook_path, need_entry_log=True)
@@ -270,10 +272,12 @@ def log_parlay_to_excel(workbook_path, legs, multiplier, entry_type_label, date_
     if is_flex:
         entry_note += f" [pkflex:1miss={one_miss_multiplier or ''},2miss={two_miss_multiplier or ''}]"
     entry_values = [date_str, entry_id, entry_type_label, multiplier, legs_written,
-                     modelled_ev, None, None, None, None, entry_note]
+                     modelled_ev, stake, None, None, None, entry_note]
     for col, val in enumerate(entry_values, start=1):
         entry_log.cell(row=entry_row, column=col, value=val)
     entry_log.cell(row=entry_row, column=4).number_format = '0.0\\x'
+    if stake is not None:
+        entry_log.cell(row=entry_row, column=ENTRY_COL["Stake"]).number_format = '"$"#,##0.00'
 
     try:
         wb.save(workbook_path)
