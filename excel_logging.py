@@ -1,10 +1,13 @@
 """Spreadsheet logging -- appends scanned/selected legs to the tracking workbook."""
 
+import datetime
+import json
 import os
 import re
+import shutil
 
 from result_grading import build_tag, check_clv, check_result, parse_tag
-from scoring import poisson_binomial_dist
+from scoring import extract_consensus, poisson_binomial_dist
 
 try:
     import openpyxl
@@ -166,6 +169,67 @@ def settle_entries(wb):
     return settled, manual
 
 
+def leg_prices_path(workbook_path):
+    """leg_prices.jsonl beside the tracking workbook."""
+    return os.path.join(os.path.dirname(os.path.abspath(workbook_path)), "leg_prices.jsonl")
+
+
+def _append_price_records(workbook_path, records):
+    """Append records to leg_prices.jsonl, one JSON object per line, each
+    stamped with the time. Two kinds, joined on entry_id + player/market/point:
+      "log"   -- every book's price when the leg was logged
+      "close" -- every book's price once the game started (written by "check CLV")
+    The workbook keeps one representative price per leg; this keeps them all,
+    so book weighting / de-vig changes can be tested on real logged picks, and
+    each book's logged price can be compared to the close (sharp books are
+    already near it; soft ones move toward it). book_prices rows are
+    [book, point, over, under]. Best-effort: a failure here never fails the
+    caller, since the workbook is already saved."""
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    try:
+        with open(leg_prices_path(workbook_path), "a", encoding="utf-8") as f:
+            for record in records:
+                f.write(json.dumps(dict(record, at=now)) + "\n")
+    except OSError:
+        pass
+
+
+def _save_leg_prices(workbook_path, logged):
+    """"log" records for just-logged legs. logged: [(entry_id, leg dict)]."""
+    _append_price_records(workbook_path, [{
+        "kind": "log", "entry_id": entry_id,
+        "sport": leg.get("sport", ""), "event_id": str(leg.get("event_id", "")),
+        "market": leg.get("market", ""), "player": leg.get("player", ""),
+        "point": leg.get("point"), "side": leg.get("side"), "dfs_type": leg.get("dfs_type"),
+        "consensus_pct": leg.get("consensus_pct"), "estimate_type": leg.get("estimate_type"),
+        "book_prices": leg.get("book_prices") or [],
+    } for entry_id, leg in logged])
+
+
+BACKUPS_KEPT = 14
+
+
+def _backup_workbook_today(workbook_path):
+    """Before the app's first write of the day, copy the workbook to
+    backups/<name>-YYYY-MM-DD.xlsx beside it, keeping the newest BACKUPS_KEPT.
+    openpyxl rewrites the whole file on every save and can drop Excel features
+    it doesn't understand (charts, images, pivots), and a crash mid-save can
+    corrupt it -- this is the undo. Best-effort: never blocks the write."""
+    folder = os.path.join(os.path.dirname(os.path.abspath(workbook_path)), "backups")
+    stem = os.path.splitext(os.path.basename(workbook_path))[0]
+    target = os.path.join(folder, f"{stem}-{datetime.date.today().isoformat()}.xlsx")
+    if os.path.exists(target):
+        return
+    try:
+        os.makedirs(folder, exist_ok=True)
+        shutil.copy2(workbook_path, target)
+        old = sorted(f for f in os.listdir(folder) if f.startswith(stem + "-") and f.endswith(".xlsx"))
+        for name in old[:-BACKUPS_KEPT]:
+            os.remove(os.path.join(folder, name))
+    except OSError:
+        pass
+
+
 def log_parlay_to_excel(workbook_path, legs, multiplier, entry_type_label, date_str,
                          is_flex=False, one_miss_multiplier=None, two_miss_multiplier=None, stake=None):
     """
@@ -280,12 +344,14 @@ def log_parlay_to_excel(workbook_path, legs, multiplier, entry_type_label, date_
         entry_log.cell(row=entry_row, column=ENTRY_COL["Stake"]).number_format = '"$"#,##0.00'
 
     try:
+        _backup_workbook_today(workbook_path)
         wb.save(workbook_path)
     except PermissionError:
         return False, "Couldn't save -- the workbook is open in Excel. Close it and try again.", None
     except Exception as e:
         return False, f"Couldn't save workbook: {type(e).__name__}: {e}", None
 
+    _save_leg_prices(workbook_path, [(entry_id, leg) for leg in legs])
     return True, f"Logged {legs_written} leg(s) as entry {entry_id}.", entry_id
 
 
@@ -324,6 +390,7 @@ def log_legs_for_tracking(workbook_path, legs, date_str):
         seen.add(leg_key(leg_log, next_row))
         next_row += 1
     legs_written = skipped = 0
+    logged = []
 
     for leg in legs:
         key = _pick_key((str(leg.get("event_id", "")), leg.get("market", "")),
@@ -371,18 +438,21 @@ def log_legs_for_tracking(workbook_path, legs, date_str):
         leg_log.cell(row=next_row, column=23).number_format = '0.0000'
         next_row += 1
         legs_written += 1
+        logged.append((entry_id, leg))
 
     skipped_note = f" Skipped {skipped} already in the log." if skipped else ""
     if not legs_written:
         return True, f"Nothing new to log.{skipped_note}"
 
     try:
+        _backup_workbook_today(workbook_path)
         wb.save(workbook_path)
     except PermissionError:
         return False, "Couldn't save -- the workbook is open in Excel. Close it and try again."
     except Exception as e:
         return False, f"Couldn't save workbook: {type(e).__name__}: {e}"
 
+    _save_leg_prices(workbook_path, logged)
     return True, f"Logged {legs_written} leg(s) for tracking (no multiplier -- fill in Result later).{skipped_note}"
 
 
@@ -447,6 +517,7 @@ def check_and_fill_results(workbook_path, api_key):
 
     if changed:
         try:
+            _backup_workbook_today(workbook_path)
             wb.save(workbook_path)
         except PermissionError:
             return False, "Couldn't save -- the workbook is open in Excel. Close it and try again."
@@ -478,6 +549,7 @@ def check_and_fill_clv(workbook_path, api_key):
     cache = {}  # (sport, event_id, "stats"|"odds", ...) -> fetched data, shared across every row this pass
     checked = pending = no_line = no_tag = 0
     changed = False
+    closes = []
 
     row = 2
     while leg_log.cell(row=row, column=COL["Player"]).value not in (None, ""):
@@ -505,22 +577,39 @@ def check_and_fill_clv(workbook_path, api_key):
 
         if status == "upcoming":
             pending += 1
-        elif favorable is None:
+            row += 1
+            continue
+        if favorable is None:
             no_line += 1
         else:
             leg_log.cell(row=row, column=COL["CLV Favorable?"], value=("YES" if favorable else "NO"))
             checked += 1
             changed = True
+        # Every book's closing price at this leg's line, from the odds check_clv
+        # just fetched (cached, no extra request). Written even when the line
+        # didn't move (favorable None) -- those rows get re-checked next run, so
+        # a leg can collect several "close" records; the first one is the close.
+        closing_event = cache.get((tag["sport"], tag["event_id"], "odds", tag["market"]))
+        if closing_event:
+            closes.append({
+                "kind": "close", "entry_id": leg_log.cell(row=row, column=COL["Entry ID"]).value,
+                "sport": tag["sport"], "event_id": tag["event_id"], "market": tag["market"],
+                "player": player, "point": point, "side": side, "closing_point": _closing_point,
+                "book_prices": [[c["book"], c["book_point"], c["over_price"], c["under_price"]]
+                                for c in extract_consensus(closing_event, player, tag["market"], point)],
+            })
         row += 1
 
     if changed:
         try:
+            _backup_workbook_today(workbook_path)
             wb.save(workbook_path)
         except PermissionError:
             return False, "Couldn't save -- the workbook is open in Excel. Close it and try again."
         except Exception as e:
             return False, f"Couldn't save workbook: {type(e).__name__}: {e}"
 
+    _append_price_records(workbook_path, closes)
     message = (f"Checked CLV for {checked} pick(s). {pending} still pending (game hasn't started yet). "
                f"{no_line} started but no current consensus line was found. "
                f"{no_tag} too old to auto-check (logged before this feature existed).")

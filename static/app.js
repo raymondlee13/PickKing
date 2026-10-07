@@ -150,7 +150,7 @@ function browseGames() {
             area.innerHTML = html;
         })
         .catch(function(err) {
-            area.innerHTML = '<div class="game-list-msg">Could not load games: ' + err + '</div>';
+            area.innerHTML = '<div class="game-list-msg">Could not load games: ' + escapeAttr(err) + '</div>';
         });
 }
 
@@ -199,6 +199,9 @@ function checkClv() {
 // split into two different checks instead of one blended "hit rate by
 // tier" number (tier isn't comparable across leg types since goblin/demon
 // bars vary per leg while standard/discount bars are flat).
+// Below this many graded picks the Brier score is mostly noise -- say so next to it.
+var BRIER_MIN_PICKS = 50;
+
 function ciText(ci) {
     return ci ? ci[0].toFixed(0) + '&ndash;' + ci[1].toFixed(0) + '%' : '';
 }
@@ -211,19 +214,23 @@ function viewCalibrationReport() {
         .then(function(resp) { return resp.json(); })
         .then(function(resp) {
             if (!resp.success) {
-                area.innerHTML = '<div class="raw-data-panel"><div class="game-list-msg">' + resp.message + '</div></div>';
+                area.innerHTML = '<div class="raw-data-panel"><div class="game-list-msg">' + escapeAttr(resp.message) + '</div></div>';
                 return;
             }
             var d = resp.data;
             if (!d || d.total_graded === 0) {
-                area.innerHTML = '<div class="raw-data-panel"><div class="game-list-msg">' + resp.message + '</div></div>';
+                area.innerHTML = '<div class="raw-data-panel"><div class="game-list-msg">' + escapeAttr(resp.message) + '</div></div>';
                 return;
             }
 
             var html = '<div class="raw-data-panel">';
             html += '<div class="meta">' + d.total_graded + ' graded pick(s) | Brier score: '
                 + (d.brier_score != null ? d.brier_score : 'N/A')
-                + ' (0 = perfect calibration, 0.25 = no better than a coin flip)</div>';
+                + ' (0 = perfect calibration, 0.25 = no better than a coin flip)'
+                + (d.total_graded < BRIER_MIN_PICKS
+                    ? '<br>Too few picks to judge yet. Under ' + BRIER_MIN_PICKS + ' graded picks this mostly reflects luck.'
+                    : '')
+                + '</div>';
 
             html += '<div class="section-label" style="margin-top:0.8rem;">Standard/Discount picks by Tier</div>';
             html += '<div class="meta">Bar is flat for these, so tier ordering is a real, unconfounded hit-rate check.</div>';
@@ -297,7 +304,7 @@ function viewCalibrationReport() {
             area.innerHTML = html;
         })
         .catch(function(err) {
-            area.innerHTML = '<div class="raw-data-panel"><div class="game-list-msg">Request failed: ' + err + '</div></div>';
+            area.innerHTML = '<div class="raw-data-panel"><div class="game-list-msg">Request failed: ' + escapeAttr(err) + '</div></div>';
         });
 }
 
@@ -312,12 +319,12 @@ function viewCorrelationReport() {
         .then(function(resp) { return resp.json(); })
         .then(function(resp) {
             if (!resp.success) {
-                area.innerHTML = '<div class="raw-data-panel"><div class="game-list-msg">' + resp.message + '</div></div>';
+                area.innerHTML = '<div class="raw-data-panel"><div class="game-list-msg">' + escapeAttr(resp.message) + '</div></div>';
                 return;
             }
             var d = resp.data;
             if (!d || d.total_legs === 0) {
-                area.innerHTML = '<div class="raw-data-panel"><div class="game-list-msg">' + resp.message + '</div></div>';
+                area.innerHTML = '<div class="raw-data-panel"><div class="game-list-msg">' + escapeAttr(resp.message) + '</div></div>';
                 return;
             }
 
@@ -332,7 +339,7 @@ function viewCorrelationReport() {
                 html += '<div class="section-label" style="margin-top:0.8rem;">Same-game pairs (' + s.total_pairs + ')</div>';
                 html += '<div class="meta">Both hit: ' + s.both_hit_pct + '% | Both missed: ' + s.both_miss_pct
                     + '% | Split: ' + s.split_pct + '%<br>'
-                    + 'Rough independence baseline (your overall hit rate squared): ' + s.expected_both_hit_pct_if_independent + '% both-hit. '
+                    + 'Expected if the legs were unrelated (from each pair\'s own predicted chances): ' + s.expected_both_hit_pct_if_independent + '% both-hit. '
                     + 'If your real "both hit" % is well above that, same-game legs may be moving together more than independent math assumes.</div>';
                 if (s.total_pairs < 15) {
                     html += '<div class="meta" style="color:var(--accent);">Only ' + s.total_pairs + ' pair(s) so far, '
@@ -351,7 +358,7 @@ function viewCorrelationReport() {
             area.innerHTML = html;
         })
         .catch(function(err) {
-            area.innerHTML = '<div class="raw-data-panel"><div class="game-list-msg">Request failed: ' + err + '</div></div>';
+            area.innerHTML = '<div class="raw-data-panel"><div class="game-list-msg">Request failed: ' + escapeAttr(err) + '</div></div>';
         });
 }
 
@@ -411,7 +418,7 @@ function correctMultiplier(rowIdx) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             market: r.market, dfs_type: r.dfs_type, deviation: r.deviation,
-            multiplier: mult, consensus_pct: r.consensus_pct
+            multiplier: mult, consensus_pct: r.consensus_pct, single_book: r.single_book
         })
     })
     .then(function(resp) { return resp.json(); })
@@ -470,9 +477,9 @@ function secondaryBadgesForRow(r) {
         b += '<span class="badge badge-est">Ladder estimate · single book, no de-vig'
             + (r.ladder_extrapolated ? ' · beyond published rungs' : '') + '</span>';
     } else if (r.estimated) {
-        b += '<span class="badge badge-est">EST +' + r.gap + 'pt</span>';
+        b += '<span class="badge badge-est">Adjusted from a line ' + r.gap + ' away</span>';
     }
-    if (r.single_book) b += '<span class="badge badge-single">Single book</span>';
+    if (r.single_book) b += '<span class="badge badge-single">Single book' + (r.tier_capped ? ' · capped at C' : '') + '</span>';
     return b;
 }
 
@@ -486,7 +493,8 @@ function toggleLegDetails(rowIdx) {
 var BOOK_NAMES = {
     draftkings: 'DraftKings', fanduel: 'FanDuel', betmgm: 'BetMGM', caesars: 'Caesars', betrivers: 'BetRivers',
     pinnacle: 'Pinnacle', bovada: 'Bovada', unibet: 'Unibet', prizepicks: 'PrizePicks', underdog: 'Underdog',
-    sleeper: 'Sleeper', dabble: 'Dabble',
+    sleeper: 'Sleeper', dabble: 'Dabble', fanatics: 'Fanatics', hardrock: 'Hard Rock', betway: 'Betway',
+    betonlineag: 'BetOnline', lowvig: 'LowVig', novig: 'Novig', prophetx: 'ProphetX',
 };
 function bookName(key) { return BOOK_NAMES[key] || key; }
 
@@ -511,7 +519,7 @@ function legStripHtml(r, gameKey, gameLabel, rowIdx) {
         dfs_type: r.dfs_type, consensus_pct: r.consensus_pct, bar: r.bar, margin: r.margin,
         tier: r.tier, whole_number: (r.point !== null && r.point % 1 === 0),
         estimate_type: r.estimate_type, book_point: r.book_point,
-        over_price: r.over_price, under_price: r.under_price,
+        over_price: r.over_price, under_price: r.under_price, book_prices: r.book_prices || [],
         books: r.books, matchup: r.matchup || '', spread_pct: r.spread_pct,
         // sport/event_id (tagged on every row at scan time -- see propline_api.py
         // scan_slate and server.py handle_scan/handle_grade_manual) let a later
@@ -595,13 +603,13 @@ function checkLegContext(rowIdx) {
     .then(function(resp) { return resp.json(); })
     .then(function(data) {
         if (!data.success) {
-            resultEl.innerHTML = '<div class="game-list-msg" style="color:var(--neg)">' + data.text + '</div>';
+            resultEl.innerHTML = '<div class="game-list-msg" style="color:var(--neg)">' + escapeAttr(data.text) + '</div>';
             return;
         }
         resultEl.innerHTML = '<div class="ai-text">' + escapeAttr(data.text) + '</div>';
     })
     .catch(function(err) {
-        resultEl.innerHTML = '<div class="game-list-msg" style="color:var(--neg)">Request failed: ' + err + '</div>';
+        resultEl.innerHTML = '<div class="game-list-msg" style="color:var(--neg)">Request failed: ' + escapeAttr(err) + '</div>';
     });
 }
 
@@ -623,9 +631,10 @@ var TIER_A_MARGIN = 5.0;
 var TIER_B_MARGIN = 3.0;
 var TIER_C_MARGIN = 1.5;
 
-function tierForMargin(margin) {
+// singleBook: one book's price caps at TIER C -- mirrors cap_tier() in scoring.py.
+function tierForMargin(margin, singleBook) {
     if (margin < TIER_C_MARGIN) return 'BELOW BAR';
-    if (margin < TIER_B_MARGIN) return 'TIER C';
+    if (margin < TIER_B_MARGIN || singleBook) return 'TIER C';
     if (margin < TIER_A_MARGIN) return 'TIER B';
     if (margin < TIER_S_MARGIN) return 'TIER A';
     return 'TIER S';
@@ -668,7 +677,7 @@ function withBoost(r) {
     if (r.consensus_pct != null) {
         var boostedMargin = Math.round((r.consensus_pct - boostedBar) * 10) / 10;
         copy.margin = boostedMargin;
-        copy.tier = tierForMargin(boostedMargin);
+        copy.tier = tierForMargin(boostedMargin, r.single_book);
     }
     return copy;
 }
@@ -931,7 +940,7 @@ function submitManualLeg() {
     .then(function(resp) { return resp.json(); })
     .then(function(data) {
         if (!data.success) {
-            resultEl.innerHTML = '<span style="color:var(--neg)">' + data.message + '</span>';
+            resultEl.innerHTML = '<span style="color:var(--neg)">' + escapeAttr(data.message) + '</span>';
             return;
         }
         var matchedGame = gameEvents.filter(function(g) { return g.eventId === eventId; })[0];
@@ -940,7 +949,7 @@ function submitManualLeg() {
         resultEl.innerHTML = '<span style="color:var(--pos)">Added and ranked on the board.</span>';
     })
     .catch(function(err) {
-        resultEl.innerHTML = '<span style="color:var(--neg)">Request failed: ' + err + '</span>';
+        resultEl.innerHTML = '<span style="color:var(--neg)">Request failed: ' + escapeAttr(err) + '</span>';
     });
 }
 
@@ -1104,7 +1113,7 @@ function selectQualifyingTiers() {
                 dfs_type: r.dfs_type, consensus_pct: r.consensus_pct, bar: r.bar, margin: r.margin,
                 tier: r.tier, whole_number: (r.point !== null && r.point % 1 === 0),
                 estimate_type: r.estimate_type, book_point: r.book_point,
-                over_price: r.over_price, under_price: r.under_price,
+                over_price: r.over_price, under_price: r.under_price, book_prices: r.book_prices || [],
                 books: r.books, matchup: r.matchup || '', spread_pct: r.spread_pct,
                 sport: r.sport || '', event_id: r.eventId || '',
             },
@@ -1223,6 +1232,7 @@ function renderEntryBuilder() {
             + '</div>';
     }).join('');
 
+    var sameGameHtml = sameGameWarningHtml(legIds);
     var avgPct = legIds.reduce(function(acc, id) { return acc + (selectedLegs[id].consensus_pct || 0); }, 0) / n;
     var showFlexTiers = isFlex && n >= 3;
     var flexDefaults = FLEX_PAYOUT_DEFAULTS[n] || { oneMiss: null, twoMiss: null };
@@ -1245,6 +1255,7 @@ function renderEntryBuilder() {
     area.innerHTML = '<div class="ticket' + (ticketOpen ? ' open' : '') + '">' + head
         + '<div class="ticket-body">'
         + listHtml
+        + sameGameHtml
         + '<div class="field-row">'
         + '<div><label for="log-entry-type">Entry</label>'
         + '<select id="log-entry-type" onchange="renderEntryBuilder()"><option value="Power"' + (isFlex ? '' : ' selected') + '>Power</option>'
@@ -1275,6 +1286,26 @@ function renderEntryBuilder() {
         + payoutTableHtml(n, isFlex)
         + '</div></div>';
     calcEntry();
+}
+
+// Legs from the same game tend to hit or miss together, but the entry's
+// probability and EV math multiply them as if independent. Flag it by plain
+// counting on event id -- no AI, no change to any number.
+function sameGameWarningHtml(legIds) {
+    var games = {};
+    legIds.forEach(function(id) {
+        var leg = selectedLegs[id];
+        var d = leg.fullData || {};
+        var key = d.event_id || leg.gameLabel;
+        if (!key) return;
+        games[key] = games[key] || { label: d.matchup || leg.gameLabel, n: 0 };
+        games[key].n++;
+    });
+    var shared = Object.keys(games).map(function(k) { return games[k]; }).filter(function(g) { return g.n >= 2; });
+    if (!shared.length) return '';
+    return '<p class="footnote same-game-warning">'
+        + shared.map(function(g) { return '<strong>' + g.n + ' legs from ' + escapeAttr(g.label) + '</strong>'; }).join(', ')
+        + '. Same-game legs tend to hit or miss together, so the odds below (which treat legs as unrelated) may be off.</p>';
 }
 
 // "6x · clears 55.0%" beside the leg count -- the closed phone bar's whole story in one line.
@@ -1322,13 +1353,13 @@ function checkEntryCorrelation() {
     .then(function(resp) { return resp.json(); })
     .then(function(data) {
         if (!data.success) {
-            resultEl.innerHTML = '<div class="game-list-msg" style="color:var(--neg)">' + data.text + '</div>';
+            resultEl.innerHTML = '<div class="game-list-msg" style="color:var(--neg)">' + escapeAttr(data.text) + '</div>';
             return;
         }
         resultEl.innerHTML = '<div class="ai-text">' + escapeAttr(data.text) + '</div>';
     })
     .catch(function(err) {
-        resultEl.innerHTML = '<div class="game-list-msg" style="color:var(--neg)">Request failed: ' + err + '</div>';
+        resultEl.innerHTML = '<div class="game-list-msg" style="color:var(--neg)">Request failed: ' + escapeAttr(err) + '</div>';
     });
 }
 
@@ -1384,13 +1415,13 @@ function logParlay() {
     .then(function(resp) { return resp.json(); })
     .then(function(data) {
         if (data.success) {
-            resultEl.innerHTML = '<span style="color:var(--pos)">' + data.message + '</span>';
+            resultEl.innerHTML = '<span style="color:var(--pos)">' + escapeAttr(data.message) + '</span>';
         } else {
-            resultEl.innerHTML = '<span style="color:var(--neg)">' + data.message + '</span>';
+            resultEl.innerHTML = '<span style="color:var(--neg)">' + escapeAttr(data.message) + '</span>';
         }
     })
     .catch(function(err) {
-        resultEl.innerHTML = '<span style="color:var(--neg)">Request failed: ' + err + '</span>';
+        resultEl.innerHTML = '<span style="color:var(--neg)">Request failed: ' + escapeAttr(err) + '</span>';
     });
 }
 
@@ -1416,13 +1447,13 @@ function logLegsForTracking() {
     .then(function(resp) { return resp.json(); })
     .then(function(data) {
         if (data.success) {
-            resultEl.innerHTML = '<span style="color:var(--pos)">' + data.message + '</span>';
+            resultEl.innerHTML = '<span style="color:var(--pos)">' + escapeAttr(data.message) + '</span>';
         } else {
-            resultEl.innerHTML = '<span style="color:var(--neg)">' + data.message + '</span>';
+            resultEl.innerHTML = '<span style="color:var(--neg)">' + escapeAttr(data.message) + '</span>';
         }
     })
     .catch(function(err) {
-        resultEl.innerHTML = '<span style="color:var(--neg)">Request failed: ' + err + '</span>';
+        resultEl.innerHTML = '<span style="color:var(--neg)">Request failed: ' + escapeAttr(err) + '</span>';
     });
 }
 

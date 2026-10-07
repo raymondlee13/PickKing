@@ -33,6 +33,8 @@ TIER_S_MARGIN = 8.0
 TIER_A_MARGIN = 5.0
 TIER_B_MARGIN = 3.0
 TIER_C_MARGIN = 1.5
+# Tiers a leg priced by only ONE book can't claim -- it's capped to TIER C.
+SINGLE_BOOK_CAPPED_TIERS = {"TIER S", "TIER A", "TIER B"}
 # The standard leg's own fair multiplier for a 2-pick Power entry, derived
 # from POWER_PLAY_BARS[2] -- every goblin/demon calibration example so far
 # was captured as a real 2-pick entry (one standard leg + one alt leg), so
@@ -44,19 +46,23 @@ STANDARD_2PICK_LEG_MULTIPLIER = 100.0 / POWER_PLAY_BARS[2]
 # just a single fixed reference bar so legs still get an initial Tier/margin
 # label to sort and filter by -- 3-pick Power's bar, the old default entry.
 DEFAULT_BAR = POWER_PLAY_BARS[3]
-# Safety default flipped after the WNBA assists bug: markets require an EXACT
-# line match unless explicitly whitelisted below as safe to estimate within
-# a small gap. Unconfirmed/new sports (like MLB) inherit this safe default
-# automatically -- nothing gets graded off a fudged number by mistake.
-WIDE_MARKETS_MAX_GAP = {
-    "player_points": 1.0,
-    "player_rebounds": 1.0,
-    "player_points_rebounds_assists": 1.0,
-    "player_pass_yds": 5.0,
-    "player_rush_yds": 5.0,
-    "player_reception_yds": 5.0,
-}
-DEFAULT_MAX_GAP = 0.0  # exact match only, unless whitelisted above
+# Markets require an EXACT line match by default. Grading a PrizePicks line
+# off a book's price at a different line unchanged is worse than no grade: a
+# 1-rebound gap is ~16 probability points, and the error always favors the
+# losing side. The one exception: count stats in GAP_ADJUST_MARKETS, where a
+# book line up to GAP_ADJUST_MAX away is shifted to PrizePicks' line with a
+# Poisson fit (see shift_over_prob). Which markets qualify was decided by
+# gap_adjust_check.py -- hide a book's real price at one line, predict it from
+# its neighbor, keep the markets where that prediction lands close.
+# From gap_adjust_check.py on 2026-10-07 live odds: these predicted a book's
+# real price from a line 1 away within 1.4-2.3 pts (books pricing the SAME line
+# differ by ~1-2 pts), vs 18-35 pts reusing the neighbor's price as-is.
+# Rebounds (4.0), receptions (3.9) and assists (3.6) improved a lot but missed
+# the 3-pt bar -- a dispersion-tuned shape is the next step for them. Points
+# and yards aren't Poisson-shaped at all (5-7 pt misses). Re-run the check
+# before adding a market.
+GAP_ADJUST_MARKETS = {"batter_hits", "pitcher_strikeouts", "player_pass_tds", "player_threes"}
+GAP_ADJUST_MAX = 1.0
 # Ceiling on any threshold-ladder probability. Ladder prices are one-sided
 # (no Under to de-vig against), so the vig stays in and inflates the
 # near-certain end -- a -5000 "2+ rebounds" reads as 98% it isn't.
@@ -111,7 +117,44 @@ SPORT_LABELS = {
 
 
 def get_max_gap(market_key):
-    return WIDE_MARKETS_MAX_GAP.get(market_key, DEFAULT_MAX_GAP)
+    return GAP_ADJUST_MAX if market_key in GAP_ADJUST_MARKETS else 0.0
+
+
+def poisson_over(line, lam):
+    """P(Over `line`) for a Poisson count with mean lam. A whole-number line can
+    push, and books price those with the push refunded, so it's P(over | no
+    push) -- the same thing a de-vigged book price at that line means."""
+    k = math.floor(line)
+    pmf = math.exp(-lam)
+    at_or_below = pmf  # P(X <= k), built up term by term (no factorial overflow)
+    for i in range(1, k + 1):
+        pmf *= lam / i
+        at_or_below += pmf
+    over = max(0.0, 1.0 - at_or_below)
+    if line == k:  # whole number: drop the push
+        return over / (1.0 - pmf) if pmf < 1.0 else 0.0
+    return over
+
+
+def fit_poisson_mean(line, over_prob):
+    """The Poisson mean that makes P(Over `line`) equal over_prob (bisection --
+    P(Over) only rises as the mean rises)."""
+    lo, hi = 1e-6, 400.0
+    for _ in range(80):
+        mid = (lo + hi) / 2
+        if poisson_over(line, mid) < over_prob:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2
+
+
+def shift_over_prob(book_line, over_prob, target_line):
+    """A book's no-vig P(Over book_line), moved to target_line: fit the Poisson
+    mean that reproduces the book's price, then read P(Over target_line) off it.
+    Still anchored to the market -- the book sets the mean; Poisson only says
+    how probability spreads across neighboring lines."""
+    return poisson_over(target_line, fit_poisson_mean(book_line, over_prob))
 
 
 def american_to_prob(price):
@@ -232,6 +275,10 @@ def extract_consensus(event, player, market_key, target_point):
             if not over or not under:
                 continue
             novig = devig_two_way(american_to_prob(over["price"]), american_to_prob(under["price"]))
+            if not is_exact and novig is not None:
+                # Only reachable for GAP_ADJUST_MARKETS (get_max_gap is 0 otherwise):
+                # move the book's price to PrizePicks' line instead of using it as-is.
+                novig = shift_over_prob(chosen_point, novig, target_point)
             gap = abs(chosen_point - target_point) if target_point is not None else 0.0
             results.append({"book": book["key"], "is_exact_match": is_exact,
                              "gap": gap, "novig_over_prob": novig,
@@ -391,6 +438,13 @@ def grade_leg(bar, true_prob_pct):
     return margin, tier
 
 
+def cap_tier(tier, single_book):
+    """One book's price is too noisy to call an S/A/B edge -- cap it at C so the
+    leg stays visible (margin unchanged) but out of "add every S/A/B leg".
+    Mirrored in app.js's tierForMargin for the profit-boost view."""
+    return "TIER C" if single_book and tier in SINGLE_BOOK_CAPPED_TIERS else tier
+
+
 def find_ladder_reference_point(ladder):
     """Where a threshold ladder's own probability curve crosses 50% -- a
     last-resort reference line (see calibrated_bar_for_leg) for when no book
@@ -521,6 +575,7 @@ def _grade_leg(event, leg, bar):
             "deviation": deviation, "assumed_multiplier": round(assumed_multiplier, 2) if assumed_multiplier else None,
             "estimate_type": "NO_BOOK", "whole_number": leg["point"] is not None and float(leg["point"]) % 1 == 0,
             "book_point": None, "over_price": None, "under_price": None,
+            "tier_capped": False, "book_prices": [],
         }
 
     if from_ladder is not None:
@@ -532,7 +587,11 @@ def _grade_leg(event, leg, bar):
         max_gap = 0.0
         books_used = ["threshold ladder (pooled)"]
     else:
-        over_pct = (sum(probs) / len(probs)) * 100
+        # Median, not mean: one soft or stale book can't drag the consensus,
+        # and it needs no opinion on which books are sharp. Same as the mean
+        # for 1-2 books. Revisit with weighting once leg_prices.jsonl (see
+        # excel_logging.py) has enough logged legs to test it on.
+        over_pct = statistics.median(probs) * 100
         under_pct = 100.0 - over_pct
         spread_pct = (max(probs) - min(probs)) * 100 if len(probs) > 1 else None
         single_book = len(probs) < 2
@@ -574,6 +633,9 @@ def _grade_leg(event, leg, bar):
     else:
         margin, tier = grade_leg(leg_bar, true_pct)
 
+    tier_capped = cap_tier(tier, single_book) != tier
+    tier = cap_tier(tier, single_book)
+
     # Estimate-type taxonomy for spreadsheet logging (see PrizePicks_Model_Tracking.xlsx
     # Legend). NOTE: we do NOT do push modeling -- whole-number lines are tagged by
     # their actual matching method (exact/estimated), not auto-labeled PUSH_FITTED,
@@ -584,7 +646,7 @@ def _grade_leg(event, leg, bar):
     elif is_demon_or_goblin_leg and any_estimate:
         estimate_type = "GOBLIN_FIT"
     elif any_estimate:
-        estimate_type = "ALT_ESTIMATED"
+        estimate_type = "GAP_ADJUSTED"  # Poisson-shifted from a book line up to GAP_ADJUST_MAX away
     else:
         estimate_type = "EXACT_MATCH"
     whole_number = leg["point"] is not None and float(leg["point"]) % 1 == 0
@@ -614,7 +676,13 @@ def _grade_leg(event, leg, bar):
         "deviation": deviation, "assumed_multiplier": round(assumed_multiplier, 2) if assumed_multiplier else None,
         "estimate_type": estimate_type, "whole_number": whole_number,
         "ladder_extrapolated": from_ladder is not None and ladder_extrapolated(ladder, leg["point"]),
+        "tier_capped": tier_capped,
         "book_point": book_point, "over_price": over_price, "under_price": under_price,
+        # Every book's own price behind this leg, [book, point, over, under] --
+        # compact on purpose (rows sit in browser storage). Logged to
+        # leg_prices.jsonl so book weighting/de-vig changes can be tested later.
+        "book_prices": [[c["book"], c["book_point"], c["over_price"], c["under_price"]] for c in consensus]
+                       if from_ladder is None else [],
     }
 
 
@@ -625,19 +693,20 @@ def _grade_leg(event, leg, bar):
 # UNKNOWN sits above BELOW BAR deliberately: "we don't know" is more
 # promising than "we know this misses" -- see chat.
 _TIER_BUCKET = {"TIER S": 3, "TIER A": 3, "TIER B": 3, "TIER C": 3, "UNKNOWN": 2, "BELOW BAR": 1, "NO DATA": 0}
+_TIER_RANK = {"TIER S": 4, "TIER A": 3, "TIER B": 2, "TIER C": 1}
 
 
 def row_sort_key(r):
     """Shared by build_report and scan_slate so both sort identically."""
     bucket = _TIER_BUCKET.get(r["tier"], 0)
     if bucket == 3:
-        rank = r["margin"]
+        rank = (_TIER_RANK[r["tier"]], r["margin"])  # tier first: a capped single-book C can have a big margin
     elif bucket == 2:
-        rank = r["consensus_pct"] if r["consensus_pct"] is not None else -1
+        rank = (0, r["consensus_pct"] if r["consensus_pct"] is not None else -1)
     elif bucket == 1:
-        rank = r["margin"] if r["margin"] is not None else -1
+        rank = (0, r["margin"] if r["margin"] is not None else -1)
     else:
-        rank = 0
+        rank = (0, 0)
     return (bucket, rank)
 
 

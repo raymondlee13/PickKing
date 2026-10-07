@@ -102,8 +102,11 @@ def create_session(username):
 
 
 def username_for_session(token):
+    """The logged-in username, or None if the session is unknown, expired, or
+    its account has since been removed from users.json (so deleting a user
+    locks them out now, not when their 30-day cookie runs out)."""
     entry = _sessions.get(token)
-    if entry and entry[1] > time.time():
+    if entry and entry[1] > time.time() and entry[0] in _load_users():
         return entry[0]
     return None
 

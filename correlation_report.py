@@ -37,9 +37,15 @@ def _read_graded_rows(leg_log):
                 "point": leg_log.cell(row=r, column=COL["PP Line"]).value,
                 "side": leg_log.cell(row=r, column=COL["Side"]).value,
                 "hit": result == "W",
+                "true_pct": leg_log.cell(row=r, column=COL["Predicted True %"]).value,
             })
         r += 1
     return list(rows.values())
+
+
+def _prob(leg, fallback):
+    p = leg["true_pct"]
+    return p if isinstance(p, (int, float)) and 0 < p <= 1 else fallback
 
 
 def build_report(workbook_path):
@@ -81,6 +87,9 @@ def build_report(workbook_path):
                     "leg_a": f"{a['player']} {a['side']} {a['stat']} {a['point']}",
                     "leg_b": f"{b['player']} {b['side']} {b['stat']} {b['point']}",
                     "outcome": outcome,
+                    # P(both hit) if independent: each leg's own predicted probability,
+                    # falling back to your overall hit rate where one wasn't logged.
+                    "p_both": _prob(a, overall_hit_rate) * _prob(b, overall_hit_rate),
                 })
 
     summary = None
@@ -89,18 +98,17 @@ def build_report(workbook_path):
         both_hit = sum(1 for p in pairs if p["outcome"] == "BOTH_HIT")
         both_miss = sum(1 for p in pairs if p["outcome"] == "BOTH_MISS")
         split = total - both_hit - both_miss
-        # Rough independence baseline: if two legs' outcomes were unrelated,
-        # both-hit rate would be roughly (your overall hit rate)^2. Approximate
-        # on purpose -- a real baseline would use each leg's own probability,
-        # not one global rate, but that needs more data than this tool will
-        # realistically have early on. Treat this as a sanity-check reference
-        # point, not a rigorous statistical test.
+        # Independence baseline: if each pair's two outcomes were unrelated, the
+        # both-hit rate would average P(A) x P(B) over the pairs, using each
+        # leg's own predicted probability (a 90% goblin paired with a 55% leg
+        # expects ~50% both-hit, not overall_hit_rate^2). Still needs real
+        # sample size before a gap from it means anything.
         summary = {
             "total_pairs": total,
             "both_hit_pct": round(both_hit / total * 100, 1),
             "both_miss_pct": round(both_miss / total * 100, 1),
             "split_pct": round(split / total * 100, 1),
-            "expected_both_hit_pct_if_independent": round((overall_hit_rate ** 2) * 100, 1),
+            "expected_both_hit_pct_if_independent": round(sum(p["p_both"] for p in pairs) / total * 100, 1),
         }
 
     data = {

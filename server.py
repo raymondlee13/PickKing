@@ -28,7 +28,7 @@ from propline_api import fetch_props, list_upcoming_events, scan_slate, utc_to_l
 from scoring import (
     BASKETBALL_MARKETS, DEFAULT_BAR, MARKETS_BY_SPORT, SPORT_LABELS,
     STANDARD_2PICK_LEG_MULTIPLIER, build_report, extract_pp_lines, extract_raw_all_books,
-    find_consensus_reference_point, grade_leg, grade_manual_leg,
+    cap_tier, find_consensus_reference_point, grade_leg, grade_manual_leg,
 )
 from views import render_form, render_home, render_login, render_register, rows_to_payload
 
@@ -326,6 +326,7 @@ class Handler(BaseHTTPRequestHandler):
         if consensus_pct is not None and assumed_multiplier:
             bar = 100.0 / assumed_multiplier
             margin, tier = grade_leg(bar, float(consensus_pct))
+            tier = cap_tier(tier, bool(data.get("single_book")))
             result.update({"bar": round(bar, 1), "margin": round(margin, 1), "tier": tier})
         self._send_json(result)
 

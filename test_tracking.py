@@ -7,7 +7,7 @@ import tempfile
 
 from calibration_report import wilson_interval
 from excel_logging import (
-    COL, ENTRY_LOG_HEADERS, LEG_LOG_HEADERS, OPENPYXL_AVAILABLE, log_legs_for_tracking, log_parlay_to_excel,
+    COL, ENTRY_LOG_HEADERS, LEG_LOG_HEADERS, OPENPYXL_AVAILABLE, leg_prices_path, log_legs_for_tracking, log_parlay_to_excel,
     open_workbook, settle_entries,
 )
 from result_grading import build_tag, grade_pick, parse_tag
@@ -151,6 +151,120 @@ def test_logged_stake_settles_to_return():
         assert settle_entries(wb) == (1, 0)
         entry_log = wb["Entry Log"]
         assert [entry_log.cell(row=2, column=c).value for c in (7, 8, 9)] == [5, "W", 15.0]  # Stake, Result, Return
+
+
+def test_logging_saves_every_books_price():
+    if not OPENPYXL_AVAILABLE:
+        return
+    import json
+    leg = {"player": "A'ja Wilson", "market": "player_points", "point": 21.5, "side": "More",
+           "dfs_type": "standard", "consensus_pct": 60.0, "bar": 55.0, "tier": "TIER B", "books": ["fanduel"],
+           "sport": "basketball_wnba", "event_id": "123",
+           "book_prices": [["fanduel", 21.5, -150, 120], ["novig", 21.5, -140, 130]]}
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "t.xlsx")
+        _blank_workbook(path)
+        log_legs_for_tracking(path, [leg], "2026-10-01")
+        log_legs_for_tracking(path, [leg], "2026-10-01")  # duplicate: skipped, so no second line
+        log_parlay_to_excel(path, [leg, dict(leg, point=4.5)], 3.0, "2-Power", "2026-10-01")
+        with open(leg_prices_path(path), encoding="utf-8") as f:
+            lines = [json.loads(x) for x in f]
+        assert [x["entry_id"] for x in lines] == ["T1", "E1", "E1"]
+        assert lines[0]["book_prices"] == leg["book_prices"] and lines[2]["point"] == 4.5
+
+
+def test_correlation_baseline_uses_each_pairs_probabilities():
+    if not OPENPYXL_AVAILABLE:
+        return
+    import openpyxl
+    from correlation_report import build_report
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "t.xlsx")
+        _blank_workbook(path)
+        wb = openpyxl.load_workbook(path)
+        for player, true_pct, result in (("A", 0.9, "W"), ("B", 0.5, "W"), ("C", 0.5, "L")):
+            row = [None] * len(LEG_LOG_HEADERS)
+            for h, v in (("Date", "2026-10-01"), ("Game", "X @ Y"), ("Player", player), ("PP Line", 1.5),
+                         ("Side", "MORE"), ("Predicted True %", true_pct), ("Result", result)):
+                row[COL[h] - 1] = v
+            wb["Leg Log"].append(row)
+        wb.save(path)
+        summary = build_report(path)[2]["summary"]
+        # Pairs: A-B 0.45, A-C 0.45, B-C 0.25 -> 38.3%. Old baseline: (2/3)^2 = 44.4%.
+        assert summary["expected_both_hit_pct_if_independent"] == 38.3
+
+
+def test_daily_backup_once_and_pruned():
+    import datetime
+    import excel_logging
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "Track.xlsx")
+        with open(path, "w") as f:
+            f.write("v1")
+        folder = os.path.join(d, "backups")
+        os.makedirs(folder)
+        for day in range(1, 21):  # 20 old backups already there
+            open(os.path.join(folder, f"Track-2026-01-{day:02d}.xlsx"), "w").close()
+        excel_logging._backup_workbook_today(path)
+        with open(path, "w") as f:
+            f.write("v2")
+        excel_logging._backup_workbook_today(path)  # second write today: no new copy
+        today = os.path.join(folder, f"Track-{datetime.date.today().isoformat()}.xlsx")
+        with open(today) as f:
+            assert f.read() == "v1"  # holds the state from before the day's first write
+        assert len(os.listdir(folder)) == excel_logging.BACKUPS_KEPT and os.path.exists(today)
+
+
+def test_clv_check_records_closing_prices():
+    if not OPENPYXL_AVAILABLE:
+        return
+    import json
+    import openpyxl
+    import excel_logging
+    closing = {"bookmakers": [{"key": "fanduel", "markets": [{"key": "player_points", "outcomes": [
+        {"name": "Over", "description": "A'ja Wilson", "point": 21.5, "price": -170},
+        {"name": "Under", "description": "A'ja Wilson", "point": 21.5, "price": 140}]}]}]}
+
+    def fake_check_clv(sport, event_id, market, player, point, side, api_key, cache):
+        cache[(sport, event_id, "odds", market)] = closing
+        return "live", True, 22.5
+
+    saved = excel_logging.check_clv
+    excel_logging.check_clv = fake_check_clv
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "t.xlsx")
+            _blank_workbook(path)
+            leg = {"player": "A'ja Wilson", "market": "player_points", "point": 21.5, "side": "More",
+                   "dfs_type": "standard", "consensus_pct": 60.0, "bar": 55.0, "tier": "TIER B",
+                   "books": ["fanduel"], "sport": "basketball_wnba", "event_id": "123"}
+            log_legs_for_tracking(path, [leg], "2026-10-01")
+            assert excel_logging.check_and_fill_clv(path, "key")[0]
+            assert openpyxl.load_workbook(path)["Leg Log"].cell(row=2, column=COL["CLV Favorable?"]).value == "YES"
+            with open(leg_prices_path(path), encoding="utf-8") as f:
+                records = [json.loads(x) for x in f]
+            assert [r["kind"] for r in records] == ["log", "close"]
+            assert records[1]["book_prices"] == [["fanduel", 21.5, -170, 140]] and records[1]["closing_point"] == 22.5
+            assert records[1]["entry_id"] == records[0]["entry_id"] == "T1"
+    finally:
+        excel_logging.check_clv = saved
+
+
+def test_deleted_user_loses_session():
+    import auth
+    with tempfile.TemporaryDirectory() as d:
+        saved = auth.USERS_PATH, auth.SESSIONS_PATH, dict(auth._sessions)
+        auth.USERS_PATH, auth.SESSIONS_PATH = os.path.join(d, "users.json"), os.path.join(d, "sessions.json")
+        try:
+            assert auth.create_user("ray", "password123")[0]
+            token = auth.create_session("ray")
+            assert auth.username_for_session(token) == "ray"
+            os.remove(auth.USERS_PATH)  # account removed by hand
+            assert auth.username_for_session(token) is None
+        finally:
+            auth.USERS_PATH, auth.SESSIONS_PATH = saved[0], saved[1]
+            auth._sessions.clear()
+            auth._sessions.update(saved[2])
 
 
 if __name__ == "__main__":

@@ -3,6 +3,7 @@
 import datetime
 import json
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -25,8 +26,30 @@ def api_get(path, api_key, extra_params=None):
     if extra_params:
         params.update(extra_params)
     url = f"https://api.prop-line.com/v1{path}?{urllib.parse.urlencode(params)}"
+    try:
+        return _get_json(url)
+    except Exception as e:
+        if not _worth_retrying(e):
+            raise
+        time.sleep(RETRY_PAUSE_SECONDS)  # one retry: PropLine occasionally times out on a single request
+        return _get_json(url)
+
+
+RETRY_PAUSE_SECONDS = 2
+
+
+def _get_json(url):
     with urllib.request.urlopen(url, timeout=20) as resp:
         return json.loads(resp.read().decode("utf-8"))
+
+
+def _worth_retrying(e):
+    """Timeouts, dropped connections and PropLine-side 5xx errors -- not a bad
+    key (401/403), a missing game (404), or a rate limit (429), where an
+    immediate retry would just fail again."""
+    if isinstance(e, urllib.error.HTTPError):
+        return e.code >= 500
+    return isinstance(e, (TimeoutError, urllib.error.URLError, ConnectionError))
 
 
 def fetch_props(sport_key, event_id, api_key, markets):
