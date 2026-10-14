@@ -40,6 +40,14 @@ import json
 import math
 import os
 
+# Markets whose payout is keyed by the player's CHANCE (books' no-vig P(over),
+# in %), not by distance from the books' line. Anytime TD is always 0.5 on
+# PrizePicks, so line distance is 0 for everyone -- yet PrizePicks pays a
+# 25% scorer far less than an 8% one. For these markets the table's first
+# number is that chance, and estimates follow payout ~ 1/chance (see
+# _interpolate_by_chance).
+PROB_KEYED_MARKETS = {"player_anytime_td"}
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CALIBRATION_PATH = os.path.join(BASE_DIR, "goblin_demon_calibration.json")
 
@@ -91,6 +99,34 @@ def _interpolate_total_multiplier(table, deviation):
     return math.exp(log_m)
 
 
+def _interpolate_by_chance(table, chance):
+    """2-pick total multiplier at this chance (%). One recorded point: assume
+    payout is inversely proportional to chance (half as likely pays twice as
+    much). Two or more: straight line on log-log between the nearest two
+    (the end pair beyond them), so PrizePicks' real curve takes over as
+    points are recorded."""
+    points = sorted(p for p in table if p[0] > 0)
+    if not points or chance is None or chance <= 0:
+        return None
+    if len(points) == 1:
+        c0, m0 = points[0]
+        return m0 * c0 / chance
+    if chance <= points[0][0]:
+        (c0, m0), (c1, m1) = points[0], points[1]
+    elif chance >= points[-1][0]:
+        (c0, m0), (c1, m1) = points[-2], points[-1]
+    else:
+        c0, m0 = points[0]
+        for c1, m1 in points[1:]:
+            if chance <= c1:
+                break
+            c0, m0 = c1, m1
+    if c1 == c0:
+        return m0
+    t = (math.log(chance) - math.log(c0)) / (math.log(c1) - math.log(c0))
+    return math.exp(math.log(m0) + t * (math.log(m1) - math.log(m0)))
+
+
 def estimate_multiplier(market_key, dfs_type, deviation, reference_leg_multiplier):
     """Estimated standalone multiplier for one alt (goblin/demon) leg, or
     None if there's no calibration data yet for this market/type.
@@ -104,6 +140,9 @@ def estimate_multiplier(market_key, dfs_type, deviation, reference_leg_multiplie
     if not table:
         return None
 
+    if market_key in PROB_KEYED_MARKETS:  # "deviation" is the player's chance here
+        observed_total = _interpolate_by_chance(table, deviation)
+        return observed_total / reference_leg_multiplier if observed_total else None
     observed_total = _interpolate_total_multiplier(table, deviation)
     return observed_total / reference_leg_multiplier
 

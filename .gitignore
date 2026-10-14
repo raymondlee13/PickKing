@@ -41,3 +41,6 @@ test_workbook*.xlsx
 
 # Generated knowledge-graph output (graphify skill) -- a build artifact
 graphify-out/
+
+# ESPN box scores cached by player_history.py -- re-downloadable, not code
+espn_cache/

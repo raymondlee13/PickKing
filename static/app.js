@@ -418,7 +418,7 @@ function correctMultiplier(rowIdx) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             market: r.market, dfs_type: r.dfs_type, deviation: r.deviation,
-            multiplier: mult, consensus_pct: r.consensus_pct, single_book: r.single_book
+            multiplier: mult, consensus_pct: r.consensus_pct
         })
     })
     .then(function(resp) { return resp.json(); })
@@ -479,7 +479,10 @@ function secondaryBadgesForRow(r) {
     } else if (r.estimated) {
         b += '<span class="badge badge-est">Adjusted from a line ' + r.gap + ' away</span>';
     }
-    if (r.single_book) b += '<span class="badge badge-single">Single book' + (r.tier_capped ? ' · capped at C' : '') + '</span>';
+    // One book's price has nothing to check it against -- a big edge from it is often
+    // a stale or off line. Keep the real tier, but say so loudly on graded legs.
+    if (r.single_book) b += '<span class="badge badge-single">' + (/^TIER /.test(r.tier)
+        ? '1 book only · check another book before playing' : 'Single book') + '</span>';
     return b;
 }
 
@@ -526,6 +529,7 @@ function legStripHtml(r, gameKey, gameLabel, rowIdx) {
         // "check results" pass re-fetch this exact game's box score directly,
         // instead of re-matching team names/dates against the API.
         sport: r.sport || '', event_id: r.eventId || '',
+        form: (function(f) { return f && { hits: f.hits, games: f.games, proj: f.proj }; })(formSummary(r)),
     };
     var logDataB64 = btoa(unescape(encodeURIComponent(JSON.stringify(logData))));
 
@@ -553,7 +557,11 @@ function legStripHtml(r, gameKey, gameLabel, rowIdx) {
         + '<span class="bb-num bb-margin" title="Margin over break-even">' + (hasMargin ? (r.margin >= 0 ? '+' : '') + r.margin.toFixed(1) : '') + '</span>'
         + '<button type="button" class="details-toggle" onclick="event.stopPropagation(); toggleLegDetails(' + rowIdx + ')">Details</button>'
         + '</div>'
-        + '<div class="bb-sub">' + (r.matchup ? '<span>' + escapeAttr(r.matchup) + '</span>' : '') + primaryBadgesForRow(r, rowIdx) + '</div>'
+        + '<div class="bb-sub">' + (r.matchup ? '<span>' + escapeAttr(r.matchup) + '</span>' : '') + primaryBadgesForRow(r, rowIdx)
+        + (lineDiffers(r) ? '<span class="badge badge-est" title="PrizePicks has ' + r.point + ', the sportsbooks\' main line is '
+            + r.books_line + '.">Books at ' + r.books_line + '</span>' : '')
+        + (r._conservative ? '<span class="badge" title="Worst of three de-vig methods; normal view: ' + r.worst_pct + '%">conservative</span>' : '')
+        + formChipHtml(r) + '</div>'
         + '<div id="leg-details-' + rowIdx + '" class="leg-details" style="display:none;">'
         + (secondaryBadgesForRow(r) ? '<div class="leg-flags">' + secondaryBadgesForRow(r) + '</div>' : '')
         + '<dl class="leg-facts"><div><dt>Spread</dt><dd>' + spread + '</dd></div>'
@@ -564,6 +572,141 @@ function legStripHtml(r, gameKey, gameLabel, rowIdx) {
         + '<div id="context-result-' + rowIdx + '" class="raw-data-panel" style="display:none;margin-top:0.5rem;"></div>'
         + '</div>'
         + '</div>';
+}
+
+// ---- Recent form (ESPN, display only) -- see player_history.py. Never touches
+// consensus_pct/bar/tier: it's context to read next to the grade, not part of it.
+
+// One leg's recent games: {values, proj, events} or null if not loaded/matched.
+function legHistory(history, r) {
+    var byPlayer = history && history[r.eventId] && history[r.eventId][r.player];
+    if (!byPlayer || !byPlayer.values[r.market]) return null;
+    return { values: byPlayer.values[r.market], proj: byPlayer.proj[r.market], events: byPlayer.events };
+}
+
+// Did this value clear the leg's line on its side? null for a push or a missing stat.
+function legHit(value, side, point) {
+    if (value === null || value === undefined || value === point) return null;
+    return side === 'Less' ? value < point : value > point;
+}
+
+// {hits, games, proj, values} for a leg at its own line/side, or null. Also
+// logged with each pick (leg_prices.jsonl) so it can later be tested.
+function formSummary(r) {
+    var h = currentGameData && legHistory(currentGameData.history, r);
+    if (!h) return null;
+    var results = h.values.map(function(v) { return legHit(v, r.side, r.point); }).filter(function(x) { return x !== null; });
+    if (!results.length) return null;
+    return { hits: results.filter(Boolean).length, games: results.length, proj: h.proj,
+             values: h.values.filter(function(v) { return v !== null; }) };
+}
+
+function formChipHtml(r) {
+    var f = formSummary(r);
+    if (!f) return '';
+    return '<span class="badge badge-form" title="Last ' + f.games + ' games (newest first): ' + escapeAttr(f.values.join(', '))
+        + '. Display only, not part of the grade.">L' + f.games + ' ' + f.hits + '/' + f.games
+        + (f.proj !== null && f.proj !== undefined ? ' · proj ' + f.proj : '') + '</span>';
+}
+
+function loadRecentForm() {
+    var gd = currentGameData;
+    if (!gd) return;
+    var statusEl = document.getElementById('form-status');
+    var wanted = {};
+    gd.rows.forEach(function(r) {
+        if (!r.eventId || !r.player) return;
+        var byPlayer = wanted[r.eventId] = wanted[r.eventId] || {};
+        var markets = byPlayer[r.player] = byPlayer[r.player] || [];
+        if (markets.indexOf(r.market) < 0) markets.push(r.market);
+    });
+    if (statusEl) statusEl.innerHTML = spinnerHtml('Loading recent form from ESPN...');
+    fetch('/player_history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sport: gd.sport, players_by_event: wanted })
+    })
+    .then(function(resp) { return resp.json(); })
+    .then(function(data) {
+        if (!data.success) {
+            if (statusEl) statusEl.textContent = data.message || 'Could not load recent form.';
+            return;
+        }
+        gd.history = data.history;
+        var games = loadGames();
+        games[gd.gameKey] = gd;
+        saveGames(games);
+        renderFilteredColumns();
+        var el = document.getElementById('form-status');
+        if (el) el.textContent = data.message;
+        renderEntryBuilder();  // same-game pair history on the ticket uses it too
+    })
+    .catch(function(err) {
+        if (statusEl) statusEl.textContent = 'Request failed: ' + err;
+    });
+}
+
+// How often two same-game legs cleared their lines TOGETHER in games both
+// played (teammates share games), vs what independent hit rates would give.
+// Null below 5 shared games -- too few to say anything.
+function pairHistory(legA, legB) {
+    var games = loadGames();
+    function hist(leg) {
+        var gd = games[leg.id.split('::')[0]];
+        var d = leg.data;
+        return gd && legHistory(gd.history, { eventId: d.event_id, player: d.player, market: d.market });
+    }
+    var ha = hist(legA), hb = hist(legB);
+    if (!ha || !hb) return null;
+    var both = 0, aHits = 0, bHits = 0, n = 0;
+    ha.events.forEach(function(eid, i) {
+        var j = hb.events.indexOf(eid);
+        if (j < 0) return;
+        var a = legHit(ha.values[i], legA.data.side, legA.data.point);
+        var b = legHit(hb.values[j], legB.data.side, legB.data.point);
+        if (a === null || b === null) return;
+        n++; if (a) aHits++; if (b) bHits++; if (a && b) both++;
+    });
+    if (n < 5) return null;
+    return { both: both, aHits: aHits, bHits: bHits, n: n };
+}
+
+function pairHistoryText(legA, legB) {
+    var h = pairHistory(legA, legB);
+    if (!h) return null;
+    var expected = (h.aHits / h.n) * (h.bHits / h.n) * h.n;
+    return escapeAttr(legA.data.player) + ' + ' + escapeAttr(legB.data.player) + ': hit together ' + h.both + ' of ' + h.n
+        + ' shared games (' + expected.toFixed(1) + ' if unrelated)';
+}
+
+// How much more (or less) often a same-game pair hit together than independent
+// odds predict, from recent games -- pulled toward 1 (unrelated) because ~10
+// games is a tiny sample: with n games, only n/(n+PAIR_SHRINK) of the raw
+// effect counts. null without enough shared games.
+var PAIR_SHRINK = 10;
+function pairLift(legA, legB) {
+    var h = pairHistory(legA, legB);
+    if (!h || !h.aHits || !h.bHits) return null;
+    var raw = (h.both / h.n) / ((h.aHits / h.n) * (h.bHits / h.n));
+    var lift = 1 + (raw - 1) * h.n / (h.n + PAIR_SHRINK);
+    return Math.min(Math.max(lift, 0.5), 2.0);
+}
+
+// Power entry's P(all hit) adjusted by each same-game pair's lift. A rough
+// first-order correction, shown NEXT TO the normal number -- never instead of it.
+function correlatedAllHit(legIds, allHitProb) {
+    var product = 1, pairs = 0;
+    for (var i = 0; i < legIds.length; i++) {
+        for (var j = i + 1; j < legIds.length; j++) {
+            var a = selectedLegs[legIds[i]].fullData || {}, b = selectedLegs[legIds[j]].fullData || {};
+            if (!a.event_id || a.event_id !== b.event_id) continue;
+            var lift = pairLift({ id: legIds[i], data: a }, { id: legIds[j], data: b });
+            if (lift === null) continue;
+            product *= lift;
+            pairs++;
+        }
+    }
+    return pairs ? { prob: Math.min(allHitProb * product, 1), pairs: pairs } : null;
 }
 
 // Whole-card click toggles selection -- clicking directly on the checkbox
@@ -617,6 +760,8 @@ function checkLegContext(rowIdx) {
 var currentGameData = null;
 var searchQuery = '';
 var typeFilters = { goblin: true, regular: true, demon: true };
+var lineDiffOnly = false;       // show only standard legs where PrizePicks' line differs from the books'
+var conservativeView = false;   // grade on the worst of three de-vig methods (see scoring.devig_methods)
 var rawViewOpen = false;
 var profitBoostPct = 0;
 
@@ -631,10 +776,9 @@ var TIER_A_MARGIN = 5.0;
 var TIER_B_MARGIN = 3.0;
 var TIER_C_MARGIN = 1.5;
 
-// singleBook: one book's price caps at TIER C -- mirrors cap_tier() in scoring.py.
-function tierForMargin(margin, singleBook) {
+function tierForMargin(margin) {
     if (margin < TIER_C_MARGIN) return 'BELOW BAR';
-    if (margin < TIER_B_MARGIN || singleBook) return 'TIER C';
+    if (margin < TIER_B_MARGIN) return 'TIER C';
     if (margin < TIER_A_MARGIN) return 'TIER B';
     if (margin < TIER_S_MARGIN) return 'TIER A';
     return 'TIER S';
@@ -669,7 +813,16 @@ var FLEX_PAYOUT_DEFAULTS = {
     6: { oneMiss: 2, twoMiss: 0.4 },
 };
 
+// Display-only transforms of a row (never stored): the conservative view swaps
+// in the worst-case de-vig probability, then any profit boost lowers the bar.
 function withBoost(r) {
+    if (conservativeView && r.worst_pct != null && r.consensus_pct != null && r.worst_pct !== r.consensus_pct) {
+        r = Object.assign({}, r, { consensus_pct: r.worst_pct, _conservative: true });
+        if (r.bar != null && r.margin != null) {
+            r.margin = Math.round((r.consensus_pct - r.bar) * 10) / 10;
+            r.tier = tierForMargin(r.margin);
+        }
+    }
     if (!profitBoostPct || r.bar == null) return r;
     var factor = 1 + profitBoostPct / 100;
     var boostedBar = Math.round((r.bar / factor) * 10) / 10;
@@ -677,7 +830,7 @@ function withBoost(r) {
     if (r.consensus_pct != null) {
         var boostedMargin = Math.round((r.consensus_pct - boostedBar) * 10) / 10;
         copy.margin = boostedMargin;
-        copy.tier = tierForMargin(boostedMargin, r.single_book);
+        copy.tier = tierForMargin(boostedMargin);
     }
     return copy;
 }
@@ -688,6 +841,7 @@ function matchesFilters(r) {
     var isRegular = !isGoblin && !isDemon;
     var typeOk = (isGoblin && typeFilters.goblin) || (isDemon && typeFilters.demon) || (isRegular && typeFilters.regular);
     if (!typeOk) return false;
+    if (lineDiffOnly && !lineDiffers(r)) return false;
     if (searchQuery) {
         var q = searchQuery.toLowerCase();
         var playerMatch = r.player.toLowerCase().indexOf(q) !== -1;
@@ -709,6 +863,12 @@ function renderFilterBar() {
         + '<div class="filter-row">'
         + '<div class="type-toggles" role="group" aria-label="Line types">'
         + toggle('goblin', 'Goblins') + toggle('regular', 'Regular') + toggle('demon', 'Demons')
+        + '</div>'
+        + '<div class="type-toggles" role="group" aria-label="Views">'
+        + '<button type="button" class="type-toggle' + (lineDiffOnly ? ' active' : '') + '" aria-pressed="' + lineDiffOnly
+        + '" onclick="toggleView(\'lineDiff\', this)" title="Only standard legs where PrizePicks\' line differs from the sportsbooks\' line. Where one side hasn\'t caught up is where real edges usually are.">Line differs</button>'
+        + '<button type="button" class="type-toggle' + (conservativeView ? ' active' : '') + '" aria-pressed="' + conservativeView
+        + '" onclick="toggleView(\'conservative\', this)" title="Grade each leg on the worst of three ways of removing the books\' vig. Edges that survive are the ones to trust most.">Conservative</button>'
         + '</div>'
         + '<label class="boost-field">Boost <input type="number" id="profit-boost-input" min="0" step="1" placeholder="0" value="'
         + (profitBoostPct || '') + '" oninput="applyBoost()">%</label>'
@@ -751,6 +911,20 @@ function renderRawPanel() {
         : ('Raw data across all books: all ' + filteredMarkets.length + ' market blocks (type in search to filter)');
 
     panel.innerHTML = '<div class="meta">' + header + '</div><pre class="raw-json">' + escapeAttr(JSON.stringify(filteredMarkets, null, 2)) + '</pre>';
+}
+
+function toggleView(which, btn) {
+    if (which === 'lineDiff') lineDiffOnly = !lineDiffOnly;
+    else conservativeView = !conservativeView;
+    var on = which === 'lineDiff' ? lineDiffOnly : conservativeView;
+    btn.classList.toggle('active', on);
+    btn.setAttribute('aria-pressed', on);
+    renderFilteredColumns();
+}
+
+// Standard leg whose PrizePicks line isn't the books' main line.
+function lineDiffers(r) {
+    return r.books_line !== null && r.books_line !== undefined && r.books_line !== r.point;
 }
 
 function toggleTypeFilter(btn) {
@@ -828,7 +1002,15 @@ var MARKET_LABELS = {
     player_threes: '3-Pointers Made',
     player_blocks: 'Blocks',
     player_steals: 'Steals',
+    player_points_rebounds: 'Points+Rebounds',
+    player_points_assists: 'Points+Assists',
+    player_rebounds_assists: 'Rebounds+Assists',
+    player_turnovers: 'Turnovers',
     // MLB
+    batter_singles: 'Singles',
+    batter_doubles: 'Doubles',
+    batter_walks: 'Walks',
+    pitcher_earned_runs: 'Earned Runs Allowed',
     batter_hits: 'Hits',
     batter_home_runs: 'Home Runs',
     batter_rbis: 'RBIs',
@@ -854,6 +1036,10 @@ var MARKET_LABELS = {
     player_kicking_points: 'Kicking Points',
     player_field_goals: 'Field Goals Made',
     player_anytime_td: 'Anytime TD',
+    player_rush_reception_yds: 'Rush+Rec Yards',
+    player_pass_rush_yds: 'Pass+Rush Yards',
+    player_reception_longest: 'Longest Reception',
+    player_rush_longest: 'Longest Rush',
 };
 
 function shortMarketLabel(key) {
@@ -1020,6 +1206,9 @@ function renderFilteredColumns() {
         + (gameData.scannedGames
             ? '<span title="' + escapeAttr(gameData.scannedGames.join(', ')) + '"><strong>' + gameData.scannedGames.length + '</strong> games</span>'
             : '')
+        + '<span id="form-status"></span>'
+        + '<button type="button" class="raw-toggle-btn" onclick="loadRecentForm()" title="Last 10 games from ESPN: hit rate at each line and a simple projection. Display only, never part of the grade.">'
+        + (gameData.history ? 'Refresh recent form' : 'Recent form') + '</button>'
         + '<button type="button" class="raw-toggle-btn" onclick="toggleRawView()">Raw data</button>'
         + '</div>';
 
@@ -1099,6 +1288,7 @@ function selectQualifyingTiers() {
     currentGameData.rows.filter(matchesFilters).map(withBoost).forEach(function(r) {
         var hasData = r.consensus_pct !== null && r.consensus_pct !== undefined;
         if (!hasData || !qualifying[r.tier]) return;
+        if (r.single_book) return; // real tier, but one book's price -- add these by hand after checking
 
         var legId = gameKey + '::' + r.player + '::' + r.market + '::' + r.point;
         if (selectedLegs[legId]) return; // already selected
@@ -1116,6 +1306,7 @@ function selectQualifyingTiers() {
                 over_price: r.over_price, under_price: r.under_price, book_prices: r.book_prices || [],
                 books: r.books, matchup: r.matchup || '', spread_pct: r.spread_pct,
                 sport: r.sport || '', event_id: r.eventId || '',
+                form: (function(f) { return f && { hits: f.hits, games: f.games, proj: f.proj }; })(formSummary(r)),
             },
         };
         added++;
@@ -1182,7 +1373,7 @@ function renderEntryBuilder() {
     var area = document.getElementById('entry-builder-area');
     var legIds = Object.keys(selectedLegs);
     var n = legIds.length;
-    var autoSelectBtn = '<button type="button" class="browse-btn" onclick="selectQualifyingTiers()">Add every S/A/B leg from this tab</button>';
+    var autoSelectBtn = '<button type="button" class="browse-btn" onclick="selectQualifyingTiers()">Add every S/A/B leg from this tab (skips 1-book legs)</button>';
 
     // Re-rendering (e.g. toggling Entry type) would otherwise wipe whatever
     // the user already typed into these -- carry them forward across re-renders.
@@ -1298,14 +1489,28 @@ function sameGameWarningHtml(legIds) {
         var d = leg.fullData || {};
         var key = d.event_id || leg.gameLabel;
         if (!key) return;
-        games[key] = games[key] || { label: d.matchup || leg.gameLabel, n: 0 };
+        games[key] = games[key] || { label: d.matchup || leg.gameLabel, n: 0, ids: [] };
         games[key].n++;
+        games[key].ids.push(id);
     });
     var shared = Object.keys(games).map(function(k) { return games[k]; }).filter(function(g) { return g.n >= 2; });
     if (!shared.length) return '';
+    // Recent-form pair history (ESPN, display only) for each same-game pair, when loaded.
+    var pairLines = [];
+    shared.forEach(function(g) {
+        for (var i = 0; i < g.ids.length; i++) {
+            for (var j = i + 1; j < g.ids.length; j++) {
+                var text = pairHistoryText({ id: g.ids[i], data: selectedLegs[g.ids[i]].fullData || {} },
+                                           { id: g.ids[j], data: selectedLegs[g.ids[j]].fullData || {} });
+                if (text) pairLines.push(text);
+            }
+        }
+    });
     return '<p class="footnote same-game-warning">'
         + shared.map(function(g) { return '<strong>' + g.n + ' legs from ' + escapeAttr(g.label) + '</strong>'; }).join(', ')
-        + '. Same-game legs tend to hit or miss together, so the odds below (which treat legs as unrelated) may be off.</p>';
+        + '. Same-game legs tend to hit or miss together, so the odds below (which treat legs as unrelated) may be off.'
+        + (pairLines.length ? '<br>Recent games: ' + pairLines.join('; ') + '. More "together" than "if unrelated" helps a Power entry.' : '')
+        + '</p>';
 }
 
 // "6x · clears 55.0%" beside the leg count -- the closed phone bar's whole story in one line.
@@ -1517,9 +1722,13 @@ function calcEntry() {
     var tier = tierForMargin(marginPts);
     var TIER_COLOR = { 'TIER S': 'var(--pos)', 'TIER A': 'var(--text)', 'TIER B': 'var(--text)', 'TIER C': 'var(--text-2)' };
     var color = TIER_COLOR[tier] || 'var(--neg)';
+    var corr = !isFlex ? correlatedAllHit(legIds, allHitProb) : null;
     resultEl.innerHTML = 'All ' + n + ' hit: ' + allHitPct + '% · ' + breakdownLine + '<br>'
         + 'EV ' + ev.toFixed(3) + 'x · margin ' + (marginPts >= 0 ? '+' : '') + marginPts.toFixed(1) + ' pts · '
-        + '<strong style="color:' + color + '">' + tier + '</strong>';
+        + '<strong style="color:' + color + '">' + tier + '</strong>'
+        + (corr ? '<br><span class="footnote">If correlated (recent games, ' + corr.pairs + ' same-game pair'
+            + (corr.pairs === 1 ? '' : 's') + '): all hit ~' + (corr.prob * 100).toFixed(1) + '% · EV ~'
+            + (corr.prob * m).toFixed(3) + 'x. Rough estimate from a small sample.</span>' : '');
 }
 
 // ---- Page load: merge any new scan into storage, then render from storage ----

@@ -33,6 +33,7 @@ Three things a neighboring "odds comparison" tool doesn't do:
 - Legs get filtered/sorted/tiered, built into a Power or Flex entry via the entry builder, and can be logged to an Excel tracking workbook.
 - After games settle: check results and CLV for logged picks, and view calibration/correlation reports to see if the grading held up.
 - Optional advisory research (`ai_context.py`) surfaces recent performance, matchup history, injury status, and same-game correlation risk as human-readable text alongside a leg — read-only context, not a score.
+- Optional recent form (`player_history.py`, "Recent form" button): last-10 hit rate at each leg's line, a recency-weighted projection, and how often same-game legs hit together, from ESPN's free public site API (unofficial — can break without notice; box scores cached in `espn_cache/`). Display-only like the AI research: never blended into `consensus_pct`/`bar`/`margin`/`tier`.
 
 ## Capabilities and Constraints
 

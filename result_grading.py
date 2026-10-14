@@ -24,7 +24,12 @@ STAT_KEY_MAP = {
         "player_rush_attempts": "rushing_attempts",
         "player_receptions": "receptions",
         "player_reception_yds": "receiving_yards",
-        "player_pass_rush_reception_yds": "rush_reception_yds",
+        # No single PropLine stat for pass+rush+rec -- summed in COMBINED_STAT_COMPONENTS.
+        # (Was mapped to rush_reception_yds, which left a QB's passing yards out.)
+        "player_rush_reception_yds": "rush_reception_yds",
+        "player_pass_rush_yds": "pass_rush_yds",
+        "player_reception_longest": "longest_reception",
+        "player_rush_longest": "longest_rush",
         "player_kicking_points": "kicking_points",
         "player_field_goals": "field_goals_made",
         "player_anytime_td": "anytime_td",
@@ -39,7 +44,11 @@ STAT_KEY_MAP = {
         "batter_total_bases": "total_bases",
         "pitcher_strikeouts": "strikeouts",
         "pitcher_hits_allowed": "hits_allowed",
-        "pitcher_walks": "walks",
+        "pitcher_walks": "walks_allowed",  # "walks" is the batting stat -- pitchers have both
+        "pitcher_earned_runs": "earned_runs",
+        "batter_singles": "singles",
+        "batter_doubles": "doubles",
+        "batter_walks": "walks",
         "pitcher_outs": "outs",
     },
     # NOT yet confirmed against a real completed NBA/WNBA game (none were
@@ -49,7 +58,11 @@ STAT_KEY_MAP = {
         "player_points": "points",
         "player_rebounds": "rebounds",
         "player_assists": "assists",
-        "player_threes": "three_pointers_made",
+        "player_threes": "threes",  # was three_pointers_made, which PropLine doesn't use
+        "player_points_rebounds": "points_rebounds",
+        "player_points_assists": "points_assists",
+        "player_rebounds_assists": "rebounds_assists",
+        "player_turnovers": "turnovers",
         "player_blocks": "blocks",
         "player_steals": "steals",
     },
@@ -60,6 +73,7 @@ STAT_KEY_MAP["basketball_wnba"] = STAT_KEY_MAP["basketball_nba"]
 # confirmed hits_runs_rbis IS a direct stat for MLB, so only PRA needs this.
 COMBINED_STAT_COMPONENTS = {
     "player_points_rebounds_assists": ["points", "rebounds", "assists"],
+    "player_pass_rush_reception_yds": ["passing_yards", "rushing_yards", "receiving_yards"],
 }
 
 # The [pk:...] tag appended to a logged leg's Note column (see excel_logging.py)
@@ -88,17 +102,21 @@ def _lookup_stat_value(market_key, sport_key, stats, player_name):
         if s.get("player_name") == player_name:
             by_stat[s.get("stat_type")] = s.get("stat_value")
 
+    if not by_stat:
+        return None  # not in the box score at all -- didn't play, can't grade
+
+    # PropLine leaves out a stat the player didn't record (a QB with no rushes
+    # has no rushing_yards row), so for a player who IS in the box score a
+    # missing stat means 0. Otherwise every such pick -- mostly winning unders --
+    # stayed "couldn't match" forever.
     components = COMBINED_STAT_COMPONENTS.get(market_key)
     if components:
-        values = [by_stat.get(c) for c in components]
-        if any(v is None for v in values):
-            return None
-        return sum(values)
+        return sum(by_stat.get(c) or 0.0 for c in components)
 
     stat_type = STAT_KEY_MAP.get(sport_key, {}).get(market_key)
     if not stat_type:
         return None
-    return by_stat.get(stat_type)
+    return by_stat.get(stat_type) or 0.0
 
 
 def grade_pick(market_key, sport_key, stats, player_name, point, side):

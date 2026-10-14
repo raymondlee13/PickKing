@@ -31,6 +31,10 @@ STAT_ABBREV = {
     "player_rush_attempts": "RUSH ATT", "player_receptions": "REC", "player_reception_yds": "REC YDS",
     "player_pass_rush_reception_yds": "PASS+RUSH+REC YDS", "player_kicking_points": "KICK PTS",
     "player_field_goals": "FG MADE", "player_anytime_td": "ANY TD",
+    "player_points_rebounds": "PTS+REB", "player_points_assists": "PTS+AST", "player_rebounds_assists": "REB+AST", "player_turnovers": "TO",
+    "batter_singles": "1B", "batter_doubles": "2B", "batter_walks": "WALKS", "pitcher_earned_runs": "ER",
+    "player_rush_reception_yds": "RUSH+REC YDS", "player_pass_rush_yds": "PASS+RUSH YDS",
+    "player_reception_longest": "LONG REC", "player_rush_longest": "LONG RUSH",
 }
 LINE_TYPE_MAP = {"standard": "STD", "goblin": "GOBLIN", "demon": "DEMON"}
 TIER_CODE_MAP = {"TIER S": "S", "TIER A": "A", "TIER B": "B", "TIER C": "C", "BELOW BAR": "BELOW BAR"}
@@ -203,6 +207,9 @@ def _save_leg_prices(workbook_path, logged):
         "point": leg.get("point"), "side": leg.get("side"), "dfs_type": leg.get("dfs_type"),
         "consensus_pct": leg.get("consensus_pct"), "estimate_type": leg.get("estimate_type"),
         "book_prices": leg.get("book_prices") or [],
+        # Recent form shown when logged ({hits, games, proj} at this line/side, or None
+        # if not loaded) -- so it can later be tested against real results.
+        "form": leg.get("form"),
     } for entry_id, leg in logged])
 
 

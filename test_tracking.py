@@ -31,9 +31,27 @@ def test_grade_pick_combined_and_missing():
     assert grade_pick("player_points_rebounds_assists", "basketball_wnba", BOX, "A'ja Wilson", 34.5, "More") == "W"
     assert grade_pick("player_points_rebounds_assists", "basketball_wnba", BOX, "A'ja Wilson", 35, "More") == "PUSH"
     assert grade_pick("player_points", "basketball_wnba", BOX, "Someone Else", 10.5, "More") is None
-    assert grade_pick("player_blocks", "basketball_wnba", BOX, "A'ja Wilson", 0.5, "More") is None  # stat absent
+    # In the box score but no blocks row: PropLine omits stats a player didn't record, so it's 0.
+    assert grade_pick("player_blocks", "basketball_wnba", BOX, "A'ja Wilson", 0.5, "More") == "L"
+    assert grade_pick("player_blocks", "basketball_wnba", BOX, "A'ja Wilson", 0.5, "Less") == "W"
     assert grade_pick("not_a_market", "basketball_wnba", BOX, "A'ja Wilson", 0.5, "More") is None
     assert grade_pick("player_points", "basketball_wnba", BOX, "A'ja Wilson", None, "More") is None
+
+
+def test_grading_fixes_from_real_propline_names():
+    nfl = [{"player_name": "Dak Prescott", "stat_type": "passing_yards", "stat_value": 316},
+           {"player_name": "Bucky Irving", "stat_type": "rushing_yards", "stat_value": 165},
+           {"player_name": "Bucky Irving", "stat_type": "receiving_yards", "stat_value": 10}]
+    # Pass+rush+rec sums all three, missing ones as 0 (was rush+rec only, and None if any was missing).
+    assert grade_pick("player_pass_rush_reception_yds", "americanfootball_nfl", nfl, "Dak Prescott", 299.5, "More") == "W"
+    assert grade_pick("player_pass_rush_reception_yds", "americanfootball_nfl", nfl, "Bucky Irving", 174.5, "More") == "W"
+    assert grade_pick("player_receptions", "americanfootball_nfl", nfl, "Dak Prescott", 0.5, "Less") == "W"
+    mlb = [{"player_name": "P", "stat_type": "walks", "stat_value": 0}, {"player_name": "P", "stat_type": "walks_allowed", "stat_value": 3}]
+    assert grade_pick("pitcher_walks", "baseball_mlb", mlb, "P", 1.5, "More") == "W"  # walks_allowed, not the batting stat
+    wnba = [{"player_name": "X", "stat_type": "threes", "stat_value": 3}, {"player_name": "X", "stat_type": "points_rebounds", "stat_value": 30}]
+    assert grade_pick("player_threes", "basketball_wnba", wnba, "X", 2.5, "More") == "W"  # PropLine's name is "threes"
+    assert grade_pick("player_points_rebounds", "basketball_wnba", wnba, "X", 29.5, "More") == "W"
+    assert grade_pick("player_points", "basketball_wnba", wnba, "Nobody", 0.5, "Less") is None  # didn't play
 
 
 def test_tag_round_trip():
@@ -248,6 +266,43 @@ def test_clv_check_records_closing_prices():
             assert records[1]["entry_id"] == records[0]["entry_id"] == "T1"
     finally:
         excel_logging.check_clv = saved
+
+
+def test_recent_form_is_logged_with_the_pick():
+    if not OPENPYXL_AVAILABLE:
+        return
+    import json
+    leg = {"player": "A'ja Wilson", "market": "player_points", "point": 21.5, "side": "More", "dfs_type": "standard",
+           "consensus_pct": 60.0, "bar": 55.0, "tier": "TIER B", "books": ["fanduel"], "sport": "basketball_wnba",
+           "event_id": "123", "form": {"hits": 7, "games": 10, "proj": 23.4}}
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "t.xlsx")
+        _blank_workbook(path)
+        log_legs_for_tracking(path, [leg, dict(leg, point=4.5, form=None)], "2026-10-01")
+        with open(leg_prices_path(path), encoding="utf-8") as f:
+            forms = [json.loads(x)["form"] for x in f]
+        assert forms == [{"hits": 7, "games": 10, "proj": 23.4}, None]
+
+
+def test_auto_check_runs_both_checks_and_survives_failures():
+    import server
+    calls = []
+    saved = server.check_and_fill_clv, server.check_and_fill_results, server.load_config, server.propline_key
+    server.load_config = lambda: {"tracking_workbook_path": "wb.xlsx"}
+    server.propline_key = lambda config: "key"
+    server.check_and_fill_clv = lambda path, key: calls.append("clv") or (True, "Checked CLV for 2 pick(s).")
+    def results(path, key):
+        calls.append("results")
+        raise PermissionError("open in Excel")
+    server.check_and_fill_results = results
+    try:
+        messages = server.auto_check_once()
+        assert calls == ["clv", "results"]
+        assert messages[0] == "CLV: Checked CLV for 2 pick(s)." and messages[1].startswith("results skipped:")
+        server.propline_key = lambda config: ""
+        assert server.auto_check_once() == []  # no API key: does nothing
+    finally:
+        server.check_and_fill_clv, server.check_and_fill_results, server.load_config, server.propline_key = saved
 
 
 def test_deleted_user_loses_session():

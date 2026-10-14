@@ -8,7 +8,6 @@ import os
 import socket
 import threading
 import time
-import unicodedata
 import urllib.error
 import urllib.parse
 import webbrowser
@@ -24,11 +23,12 @@ from config import load_config, propline_key
 from correlation_report import build_report as build_correlation_report
 from excel_logging import check_and_fill_clv, check_and_fill_results, log_legs_for_tracking, log_parlay_to_excel
 from goblin_demon_calibration import estimate_multiplier, record_correction
+from player_history import name_key, recent_form
 from propline_api import fetch_props, list_upcoming_events, scan_slate, utc_to_local_date_str
 from scoring import (
     BASKETBALL_MARKETS, DEFAULT_BAR, MARKETS_BY_SPORT, SPORT_LABELS,
     STANDARD_2PICK_LEG_MULTIPLIER, build_report, extract_pp_lines, extract_raw_all_books,
-    cap_tier, find_consensus_reference_point, grade_leg, grade_manual_leg,
+    find_consensus_reference_point, grade_leg, grade_manual_leg,
 )
 from views import render_form, render_home, render_login, render_register, rows_to_payload
 
@@ -255,6 +255,8 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_grade_manual()
         elif self.path == "/check_context":
             self.handle_check_context()
+        elif self.path == "/player_history":
+            self.handle_player_history()
         elif self.path == "/check_correlation":
             self.handle_check_correlation()
         else:
@@ -326,7 +328,6 @@ class Handler(BaseHTTPRequestHandler):
         if consensus_pct is not None and assumed_multiplier:
             bar = 100.0 / assumed_multiplier
             margin, tier = grade_leg(bar, float(consensus_pct))
-            tier = cap_tier(tier, bool(data.get("single_book")))
             result.update({"bar": round(bar, 1), "margin": round(margin, 1), "tier": tier})
         self._send_json(result)
 
@@ -424,6 +425,37 @@ class Handler(BaseHTTPRequestHandler):
             groq_key=groq_key,
         )
         self._send_json({"success": success, "text": text})
+
+    def handle_player_history(self):
+        """Recent form from ESPN's free public data for the players on a board --
+        display-only (hit rates, a projection, same-game pair history), never
+        part of grading. See player_history.py. Body: {sport, players_by_event:
+        {propline event id: {player: [markets]}}}."""
+        data = self._read_json()
+        if data is None:
+            return
+        sport = data.get("sport") or ""
+        wanted = data.get("players_by_event") or {}
+        api_key = propline_key(load_config())
+        try:
+            events = {str(e["id"]): e for e in list_upcoming_events(sport, api_key)} if api_key else {}
+        except Exception:
+            events = {}
+        history, found, asked = {}, 0, 0
+        for event_id, players in wanted.items():
+            asked += len(players)
+            game = events.get(str(event_id))
+            if not game:
+                continue  # already started/finished -- no longer in PropLine's upcoming list
+            try:
+                history[event_id] = recent_form(sport, game, players)
+            except Exception:
+                continue  # ESPN's unofficial API hiccuped -- skip this game, keep the rest
+            found += len(history[event_id])
+        message = f"Recent form loaded for {found} of {asked} players (ESPN)."
+        if found < asked:
+            message += " Missing ones: name not matched, no recent games, or the game has started."
+        self._send_json({"success": True, "history": history, "message": message})
 
     def handle_check_correlation(self):
         """Advisory-only correlation check across a built entry's legs via
@@ -683,22 +715,16 @@ def _no_legs_message(n_games, any_prizepicks_board):
             "game time, when more books post.")
 
 
-def _name_key(name):
-    """Name compared loosely: no accents, case, punctuation or spacing."""
-    plain = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
-    return "".join(ch for ch in plain.lower() if ch.isalnum())
-
-
 def _feed_spelling(event, typed):
     """The sportsbook feed's own spelling of a hand-typed player name
     ("aja wilson" -> "A'ja Wilson"), since grading matches names exactly.
     Returns the typed name unchanged when nothing in the feed matches."""
-    key = _name_key(typed)
+    key = name_key(typed)
     for book in event.get("bookmakers", []):
         for market in book.get("markets", []):
             for outcome in market.get("outcomes", []):
                 name = outcome.get("description")
-                if name and _name_key(name) == key:
+                if name and name_key(name) == key:
                     return name
     return typed
 
@@ -717,14 +743,49 @@ def _lan_ip():
         s.close()
 
 
+AUTO_CHECK_MINUTES = 60  # how often CLV/results are checked in the background; 0 turns it off
+
+
+def auto_check_once():
+    """One background pass of "Check CLV" then "Check results" -- the same work
+    as the buttons, so the reports fill in without anyone remembering to click.
+    Cheap on API quota: only legs still missing CLV/results cost requests, one
+    per game. Returns the two outcome messages."""
+    config = load_config()
+    api_key = propline_key(config)
+    workbook_path = config.get("tracking_workbook_path", "")
+    if not api_key or not workbook_path:
+        return []
+    messages = []
+    with WRITE_LOCK:  # same lock the buttons and logging use
+        for name, check in (("CLV", check_and_fill_clv), ("results", check_and_fill_results)):
+            try:
+                ok, message = check(workbook_path, api_key)
+            except Exception as e:
+                ok, message = False, f"{type(e).__name__}: {e}"
+            messages.append(f"{name}: {message}" if ok else f"{name} skipped: {message}")
+    return messages
+
+
+def _auto_check_loop():
+    while True:
+        time.sleep(AUTO_CHECK_MINUTES * 60)
+        for line in auto_check_once():
+            print(f"[auto-check {datetime.datetime.now():%H:%M}] {line}")
+
+
 def main():
     load_config()  # creates config.json with a placeholder on first run
+    if AUTO_CHECK_MINUTES:
+        threading.Thread(target=_auto_check_loop, daemon=True).start()
     server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)  # not "localhost" -- reachable from other devices on the network, gated by login
     url = f"http://localhost:{PORT}/"
     print(f"PickKing running at {url}")
     lan_ip = _lan_ip()
     if lan_ip:
         print(f"On your phone (same WiFi): http://{lan_ip}:{PORT}/")
+    if AUTO_CHECK_MINUTES:
+        print(f"Checking CLV and results automatically every {AUTO_CHECK_MINUTES} minutes while this window is open.")
     print("Press Ctrl+C in this window to stop it.")
     webbrowser.open(url)
     try:

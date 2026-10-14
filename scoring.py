@@ -6,7 +6,7 @@ import re
 import statistics
 from collections import defaultdict
 
-from goblin_demon_calibration import estimate_multiplier
+from goblin_demon_calibration import PROB_KEYED_MARKETS, estimate_multiplier
 
 DFS_BOOKS = {"prizepicks", "underdog", "sleeper", "dabble"}
 # Real-money books whose two-way prices feed the de-vigged consensus. Widened
@@ -19,6 +19,12 @@ DFS_BOOKS = {"prizepicks", "underdog", "sleeper", "dabble"}
 CONSENSUS_BOOKS = {"draftkings", "fanduel", "betmgm", "caesars", "betrivers",
                     "pinnacle", "bovada", "unibet",
                     "fanatics", "hardrock", "betway", "betonlineag", "lowvig", "novig", "prophetx"}
+# Biggest built-in margin (over + under implied probability - 1) a two-sided
+# quote can have and still count. Measured 2026-10-09 across ~3,000 quotes:
+# every real sportsbook stayed at or under 11% (Fanatics peaks there; Hard
+# Rock's -3000-style alt lines run ~5%), while the Novig and ProphetX
+# exchanges post untraded quotes like +257/-9900 (27%) or +590/-9900 (13.5%).
+MAX_HOLD = 0.12
 
 POWER_PLAY_BARS = {2: 57.7, 3: 55.0, 4: 56.0, 5: 55.0, 6: 55.0}
 # Per-leg break-even for Flex, solved via real multi-tier EV math (see chat) --
@@ -33,8 +39,6 @@ TIER_S_MARGIN = 8.0
 TIER_A_MARGIN = 5.0
 TIER_B_MARGIN = 3.0
 TIER_C_MARGIN = 1.5
-# Tiers a leg priced by only ONE book can't claim -- it's capped to TIER C.
-SINGLE_BOOK_CAPPED_TIERS = {"TIER S", "TIER A", "TIER B"}
 # The standard leg's own fair multiplier for a 2-pick Power entry, derived
 # from POWER_PLAY_BARS[2] -- every goblin/demon calibration example so far
 # was captured as a real 2-pick entry (one standard leg + one alt leg), so
@@ -49,20 +53,38 @@ DEFAULT_BAR = POWER_PLAY_BARS[3]
 # Markets require an EXACT line match by default. Grading a PrizePicks line
 # off a book's price at a different line unchanged is worse than no grade: a
 # 1-rebound gap is ~16 probability points, and the error always favors the
-# losing side. The one exception: count stats in GAP_ADJUST_MARKETS, where a
-# book line up to GAP_ADJUST_MAX away is shifted to PrizePicks' line with a
-# Poisson fit (see shift_over_prob). Which markets qualify was decided by
-# gap_adjust_check.py -- hide a book's real price at one line, predict it from
-# its neighbor, keep the markets where that prediction lands close.
-# From gap_adjust_check.py on 2026-10-07 live odds: these predicted a book's
-# real price from a line 1 away within 1.4-2.3 pts (books pricing the SAME line
-# differ by ~1-2 pts), vs 18-35 pts reusing the neighbor's price as-is.
-# Rebounds (4.0), receptions (3.9) and assists (3.6) improved a lot but missed
-# the 3-pt bar -- a dispersion-tuned shape is the next step for them. Points
-# and yards aren't Poisson-shaped at all (5-7 pt misses). Re-run the check
-# before adding a market.
-GAP_ADJUST_MARKETS = {"batter_hits", "pitcher_strikeouts", "player_pass_tds", "player_threes"}
-GAP_ADJUST_MAX = 1.0
+# losing side. The exception: markets in GAP_SHAPES, where a book line up to
+# that market's max gap away is shifted to PrizePicks' line (shift_over_prob)
+# using a distribution shape tuned for that market:
+#   ("poisson", None) -- Poisson count; spread fixed by the mean
+#   ("count", d)      -- bell curve with spread^2 = d * mean (d<1 tighter, >1 wider)
+#   ("scale", c)      -- bell curve with spread = c * mean (points, yards)
+# Shape, width and max gap per market come from gap_adjust_check.py: it tunes
+# them on half of the live games and keeps a market only if it predicts the
+# books' real price on the OTHER half within ~3 pts. Paste its output here.
+POISSON = ("poisson", None)
+GAP_SHAPES = {
+    # market: (shape, width, max gap) -- from gap_adjust_check.py on live odds,
+    # with untraded exchange quotes filtered out (MAX_HOLD). Test-half miss vs
+    # the books' real price (books pricing the SAME line differ by ~1-2 pts):
+    #   2026-10-09: pass yds 1.2, hits 1.3, pass TDs 1.5, receptions 1.6, pass
+    #   attempts 1.6, rush attempts 2.1, rec yds 2.2, completions 2.6, rush yds 2.8
+    #   2026-10-07 (too few pairs to re-test on 10-09): strikeouts 2.2, threes 2.4, points 2.8
+    # Still missing the 3-pt bar: H+R+RBI 3.5, total bases 3.7, RBIs 9.8. Not
+    # enough pairs yet: rebounds, assists, PRA and the other combos.
+    "batter_hits": ("poisson", None, 1.0),
+    "pitcher_strikeouts": ("poisson", None, 1.0),
+    "player_pass_tds": ("poisson", None, 1.0),
+    "player_pass_attempts": ("count", 3.0, 1.0),
+    "player_pass_completions": ("count", 2.0, 1.0),
+    "player_receptions": ("count", 1.7, 1.0),
+    "player_rush_attempts": ("count", 5.0, 1.0),
+    "player_threes": ("count", 1.7, 1.0),
+    "player_points": ("count", 5.0, 2.0),
+    "player_pass_yds": ("scale", 2.0, 10.0),
+    "player_reception_yds": ("scale", 1.3, 10.0),
+    "player_rush_yds": ("scale", 1.3, 10.0),
+}
 # Ceiling on any threshold-ladder probability. Ladder prices are one-sided
 # (no Under to de-vig against), so the vig stays in and inflates the
 # near-certain end -- a -5000 "2+ rebounds" reads as 98% it isn't.
@@ -72,7 +94,11 @@ LADDER_MAX_PROB = 0.92
 
 BASKETBALL_MARKETS = ["player_points", "player_rebounds", "player_assists",
                        "player_points_rebounds_assists", "player_threes",
-                       "player_blocks", "player_steals"]
+                       "player_blocks", "player_steals",
+                       "player_points_rebounds", "player_points_assists", "player_rebounds_assists",
+                       # PrizePicks posts turnovers but (2026-10-09) no sportsbook prices them, so
+                       # these show as NO DATA -- still worth listing for their recent-form chip.
+                       "player_turnovers"]
 
 # NOTE: these MLB market key names follow the-odds-api's standard naming
 # convention, which PropLine advertises compatibility with -- but this has
@@ -86,7 +112,8 @@ BASKETBALL_MARKETS = ["player_points", "player_rebounds", "player_assists",
 # they're unconfirmed for PrizePicks specifically.
 MLB_MARKETS = ["batter_hits", "batter_home_runs", "batter_rbis", "batter_hits_runs_rbis",
                "batter_runs_scored", "batter_stolen_bases", "batter_total_bases",
-               "pitcher_strikeouts", "pitcher_hits_allowed", "pitcher_walks", "pitcher_outs"]
+               "pitcher_strikeouts", "pitcher_hits_allowed", "pitcher_walks", "pitcher_outs",
+               "batter_singles", "batter_doubles", "batter_walks", "pitcher_earned_runs"]
 
 # Same caveat as MLB above: the-odds-api's standard naming convention, NOT yet
 # confirmed against a real PropLine NFL response. Treat as a starting guess to
@@ -95,7 +122,8 @@ NFL_MARKETS = ["player_pass_yds", "player_pass_tds", "player_pass_completions",
                "player_pass_attempts", "player_pass_interceptions", "player_rush_yds",
                "player_rush_attempts", "player_receptions", "player_reception_yds",
                "player_pass_rush_reception_yds", "player_kicking_points",
-               "player_field_goals", "player_anytime_td"]
+               "player_field_goals", "player_anytime_td",
+               "player_rush_reception_yds", "player_pass_rush_yds", "player_reception_longest", "player_rush_longest"]
 
 MARKETS_BY_SPORT = {
     "basketball_wnba": BASKETBALL_MARKETS,
@@ -117,7 +145,7 @@ SPORT_LABELS = {
 
 
 def get_max_gap(market_key):
-    return GAP_ADJUST_MAX if market_key in GAP_ADJUST_MARKETS else 0.0
+    return GAP_SHAPES[market_key][2] if market_key in GAP_SHAPES else 0.0
 
 
 def poisson_over(line, lam):
@@ -136,25 +164,45 @@ def poisson_over(line, lam):
     return over
 
 
-def fit_poisson_mean(line, over_prob):
-    """The Poisson mean that makes P(Over `line`) equal over_prob (bisection --
-    P(Over) only rises as the mean rises)."""
-    lo, hi = 1e-6, 400.0
-    for _ in range(80):
+def shape_over(line, mean, shape):
+    """P(Over `line`) for a stat with this mean, under one of the GAP_SHAPES
+    shapes. Bell-curve shapes treat the stat as whole numbers (Over 5.5 means
+    6+, cut at 5.5), and a whole-number line drops the push, like poisson_over."""
+    kind, width = shape
+    if kind == "poisson":
+        return poisson_over(line, mean)
+    spread = max(math.sqrt(width * mean) if kind == "count" else width * mean, 1e-9)
+
+    def cdf(x):  # normal CDF via math.erf -- the tuner calls this millions of times
+        return 0.5 * (1.0 + math.erf((x - mean) / (spread * math.sqrt(2.0))))
+
+    k = math.floor(line)
+    over = 1.0 - cdf(k + 0.5)
+    if line == k:
+        push = cdf(k + 0.5) - cdf(k - 0.5)
+        return over / (1.0 - push) if push < 1.0 else 0.0
+    return over
+
+
+def fit_mean(line, over_prob, shape=POISSON):
+    """The mean that makes P(Over `line`) equal over_prob under this shape
+    (bisection -- P(Over) only rises as the mean rises)."""
+    lo, hi = 1e-6, 500.0
+    for _ in range(60):
         mid = (lo + hi) / 2
-        if poisson_over(line, mid) < over_prob:
+        if shape_over(line, mid, shape) < over_prob:
             lo = mid
         else:
             hi = mid
     return (lo + hi) / 2
 
 
-def shift_over_prob(book_line, over_prob, target_line):
-    """A book's no-vig P(Over book_line), moved to target_line: fit the Poisson
-    mean that reproduces the book's price, then read P(Over target_line) off it.
-    Still anchored to the market -- the book sets the mean; Poisson only says
+def shift_over_prob(book_line, over_prob, target_line, shape=POISSON):
+    """A book's no-vig P(Over book_line), moved to target_line: fit the mean
+    that reproduces the book's price, then read P(Over target_line) off it.
+    Still anchored to the market -- the book sets the mean; the shape only says
     how probability spreads across neighboring lines."""
-    return poisson_over(target_line, fit_poisson_mean(book_line, over_prob))
+    return shape_over(target_line, fit_mean(book_line, over_prob, shape), shape)
 
 
 def american_to_prob(price):
@@ -163,6 +211,24 @@ def american_to_prob(price):
     if price > 0:
         return 100.0 / (price + 100.0)
     return -price / (-price + 100.0)
+
+
+def devig_methods(over_price, under_price):
+    """No-vig P(Over) from one book's two-way prices by three standard methods:
+    multiplicative (the app's grading method), additive (vig split evenly) and
+    power (the method that shades longshots most). They disagree most on
+    lopsided prices; the worst of the three is a conservative read of the edge.
+    [] if either price is missing."""
+    po, pu = american_to_prob(over_price), american_to_prob(under_price)
+    if po is None or pu is None or po + pu <= 0:
+        return []
+    total = po + pu
+    lo, hi = 0.01, 20.0  # power: the k where po^k + pu^k = 1
+    for _ in range(60):
+        k = (lo + hi) / 2
+        lo, hi = (k, hi) if po ** k + pu ** k > 1 else (lo, k)
+    methods = (po / total, po - (total - 1) / 2, po ** ((lo + hi) / 2))
+    return [min(max(m, 0.0), 1.0) for m in methods]
 
 
 def devig_two_way(over_prob, under_prob):
@@ -274,17 +340,24 @@ def extract_consensus(event, player, market_key, target_point):
             over, under = sides.get("Over"), sides.get("Under")
             if not over or not under:
                 continue
-            novig = devig_two_way(american_to_prob(over["price"]), american_to_prob(under["price"]))
+            over_p, under_p = american_to_prob(over["price"]), american_to_prob(under["price"])
+            if over_p is None or under_p is None or over_p + under_p - 1 > MAX_HOLD:
+                continue  # an untraded exchange quote (e.g. +257/-9900), not a market price
+            novig = devig_two_way(over_p, under_p)
             if not is_exact and novig is not None:
-                # Only reachable for GAP_ADJUST_MARKETS (get_max_gap is 0 otherwise):
+                # Only reachable for GAP_SHAPES markets (get_max_gap is 0 otherwise):
                 # move the book's price to PrizePicks' line instead of using it as-is.
-                novig = shift_over_prob(chosen_point, novig, target_point)
+                shape, width, _max_gap = GAP_SHAPES[market_key]
+                novig = shift_over_prob(chosen_point, novig, target_point, (shape, width))
             gap = abs(chosen_point - target_point) if target_point is not None else 0.0
             results.append({"book": book["key"], "is_exact_match": is_exact,
                              "gap": gap, "novig_over_prob": novig,
                              "book_point": chosen_point,
                              "over_price": over["price"], "under_price": under["price"]})
-    return results
+    # A real price at PrizePicks' exact line beats any shifted one: gap-adjusted
+    # books only fill in when no book has the exact line.
+    exact = [r for r in results if r["is_exact_match"]]
+    return exact or results
 
 
 def find_consensus_reference_point(event, player, market_key):
@@ -438,13 +511,6 @@ def grade_leg(bar, true_prob_pct):
     return margin, tier
 
 
-def cap_tier(tier, single_book):
-    """One book's price is too noisy to call an S/A/B edge -- cap it at C so the
-    leg stays visible (margin unchanged) but out of "add every S/A/B leg".
-    Mirrored in app.js's tierForMargin for the profit-boost view."""
-    return "TIER C" if single_book and tier in SINGLE_BOOK_CAPPED_TIERS else tier
-
-
 def find_ladder_reference_point(ladder):
     """Where a threshold ladder's own probability curve crosses 50% -- a
     last-resort reference line (see calibrated_bar_for_leg) for when no book
@@ -480,7 +546,7 @@ def find_ladder_reference_point(ladder):
     return t0 + frac * (t1 - t0)
 
 
-def calibrated_bar_for_leg(event, leg, bar, ladder=None):
+def calibrated_bar_for_leg(event, leg, bar, ladder=None, over_pct=None):
     """(leg_bar, deviation, assumed_multiplier) for a goblin/demon leg --
     factored out so both a normally-gradeable leg and one with no consensus
     probability data (see build_report) get the same calibration treatment.
@@ -488,7 +554,11 @@ def calibrated_bar_for_leg(event, leg, bar, ladder=None):
     extract_threshold_ladder) used as a last-resort reference-point source
     when neither line_gap nor a real consensus Over/Under line is available.
     """
-    if leg.get("line_gap") is not None:
+    if leg["market"] in PROB_KEYED_MARKETS:
+        # Payout here follows the player's chance, not line distance (always 0
+        # for anytime TD) -- see goblin_demon_calibration.PROB_KEYED_MARKETS.
+        deviation = round(over_pct, 1) if over_pct else None
+    elif leg.get("line_gap") is not None:
         deviation = abs(leg["line_gap"])
         if leg["dfs_odds_type"] == "goblin":
             deviation = -deviation
@@ -575,7 +645,7 @@ def _grade_leg(event, leg, bar):
             "deviation": deviation, "assumed_multiplier": round(assumed_multiplier, 2) if assumed_multiplier else None,
             "estimate_type": "NO_BOOK", "whole_number": leg["point"] is not None and float(leg["point"]) % 1 == 0,
             "book_point": None, "over_price": None, "under_price": None,
-            "tier_capped": False, "book_prices": [],
+            "book_prices": [], "worst_pct": None, "books_line": None,
         }
 
     if from_ladder is not None:
@@ -612,6 +682,25 @@ def _grade_leg(event, leg, bar):
     else:
         side, true_pct = "Less", under_pct
 
+    # Worst case across de-vig methods, for the "conservative" view: each
+    # method's median across books, then the least favorable for this side.
+    # Only when every book priced PrizePicks' exact line -- ladder and
+    # gap-adjusted estimates have one method only, so worst = the estimate.
+    worst_pct = true_pct
+    if from_ladder is None and consensus and all(c["is_exact_match"] for c in consensus):
+        per_book = [devig_methods(c["over_price"], c["under_price"]) for c in consensus]
+        per_book = [m for m in per_book if m]
+        if per_book:
+            overs = [statistics.median(b[i] for b in per_book) * 100 for i in range(3)]
+            worst_pct = min(overs) if side == "More" else 100.0 - max(overs)
+            worst_pct = min(worst_pct, true_pct)
+
+    # The books' own main line, for standard legs only (goblins/demons/promos
+    # sit off it on purpose). PrizePicks' line differing from it is where a
+    # standard leg's real edge usually comes from: one side hasn't caught up.
+    books_line = (find_consensus_reference_point(event, leg["player"], leg["market"])
+                  if leg["dfs_odds_type"] == "standard" else None)
+
     # Goblins pay less than a standard line (safer, lower multiplier) and
     # demons pay more (riskier, higher multiplier) -- grading either one
     # against the flat standard-entry bar makes goblins look inflated and
@@ -620,7 +709,7 @@ def _grade_leg(event, leg, bar):
     # its own implied break-even instead of the flat bar. Markets without
     # calibration data yet keep the old flat-bar behavior.
     leg_bar, deviation, assumed_multiplier = (
-        calibrated_bar_for_leg(event, leg, bar, ladder) if is_demon_or_goblin_leg else (bar, None, None))
+        calibrated_bar_for_leg(event, leg, bar, ladder, over_pct) if is_demon_or_goblin_leg else (bar, None, None))
 
     if is_demon_or_goblin_leg and assumed_multiplier is None:
         # No calibration data yet for this market/deviation -- calibrated_bar_for_leg
@@ -633,9 +722,6 @@ def _grade_leg(event, leg, bar):
     else:
         margin, tier = grade_leg(leg_bar, true_pct)
 
-    tier_capped = cap_tier(tier, single_book) != tier
-    tier = cap_tier(tier, single_book)
-
     # Estimate-type taxonomy for spreadsheet logging (see PrizePicks_Model_Tracking.xlsx
     # Legend). NOTE: we do NOT do push modeling -- whole-number lines are tagged by
     # their actual matching method (exact/estimated), not auto-labeled PUSH_FITTED,
@@ -646,7 +732,7 @@ def _grade_leg(event, leg, bar):
     elif is_demon_or_goblin_leg and any_estimate:
         estimate_type = "GOBLIN_FIT"
     elif any_estimate:
-        estimate_type = "GAP_ADJUSTED"  # Poisson-shifted from a book line up to GAP_ADJUST_MAX away
+        estimate_type = "GAP_ADJUSTED"  # shifted from a nearby book line -- see GAP_SHAPES
     else:
         estimate_type = "EXACT_MATCH"
     whole_number = leg["point"] is not None and float(leg["point"]) % 1 == 0
@@ -668,6 +754,8 @@ def _grade_leg(event, leg, bar):
         "type_conflict": leg.get("type_conflict", False),
         "side": side,
         "consensus_pct": round(true_pct, 1),
+        "worst_pct": round(worst_pct, 1),
+        "books_line": books_line,
         "spread_pct": round(spread_pct, 1) if spread_pct is not None else None,
         "single_book": single_book,
         "bar": round(leg_bar, 1) if leg_bar is not None else None,
@@ -676,7 +764,6 @@ def _grade_leg(event, leg, bar):
         "deviation": deviation, "assumed_multiplier": round(assumed_multiplier, 2) if assumed_multiplier else None,
         "estimate_type": estimate_type, "whole_number": whole_number,
         "ladder_extrapolated": from_ladder is not None and ladder_extrapolated(ladder, leg["point"]),
-        "tier_capped": tier_capped,
         "book_point": book_point, "over_price": over_price, "under_price": under_price,
         # Every book's own price behind this leg, [book, point, over, under] --
         # compact on purpose (rows sit in browser storage). Logged to
@@ -700,7 +787,7 @@ def row_sort_key(r):
     """Shared by build_report and scan_slate so both sort identically."""
     bucket = _TIER_BUCKET.get(r["tier"], 0)
     if bucket == 3:
-        rank = (_TIER_RANK[r["tier"]], r["margin"])  # tier first: a capped single-book C can have a big margin
+        rank = (_TIER_RANK[r["tier"]], r["margin"])
     elif bucket == 2:
         rank = (0, r["consensus_pct"] if r["consensus_pct"] is not None else -1)
     elif bucket == 1:
